@@ -1,11 +1,17 @@
 <?php
 
-define('APP_NAME','Oasis Public School ERP');
+// ===============================
+// Oasis Public School ERP
+// Configuration File
+// ===============================
 
-define('APP_URL','http://localhost/school_erp');
+// Project Name
+define('APP_NAME', 'Oasis Public School ERP');
 
-define('TIMEZONE','Asia/Kolkata');
+// Base URL
+define('BASE_URL', 'http://localhost/school_erp');
 
-date_default_timezone_set(TIMEZONE);
+// Time Zone
+date_default_timezone_set('Asia/Kolkata');
 
 ?>
