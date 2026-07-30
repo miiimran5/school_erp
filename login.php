@@ -19,7 +19,7 @@ if(isset($_POST['login']))
         $_SESSION['full_name']=$user['full_name'];
         $_SESSION['role_id']=$user['role_id'];
 
-        header("Location: admin/dashboard.php");
+        header("Location: modules/dashboard/index.php");
         exit;
     }
     else

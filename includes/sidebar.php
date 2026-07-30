@@ -37,7 +37,7 @@
                 data-accordion="false">
 
                 <li class="nav-item">
-                    <a href="<?= BASE_URL; ?>/admin/dashboard.php" class="nav-link">
+                    <a href="<?= BASE_URL; ?>/modules/dashboard/index.php
 
                         <i class="nav-icon fas fa-tachometer-alt"></i>
 
