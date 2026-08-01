@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Aug 01, 2026 at 07:02 PM
+-- Generation Time: Aug 01, 2026 at 08:10 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -20,6 +20,31 @@ SET time_zone = "+00:00";
 --
 -- Database: `school_erp`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `categories`
+--
+
+CREATE TABLE `categories` (
+  `id` int(11) NOT NULL,
+  `category_name` varchar(50) NOT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `categories`
+--
+
+INSERT INTO `categories` (`id`, `category_name`, `status`, `created_at`) VALUES
+(1, 'General', 1, '2026-08-01 17:40:30'),
+(2, 'SC', 1, '2026-08-01 17:40:30'),
+(3, 'ST', 1, '2026-08-01 17:40:30'),
+(4, 'OBC', 1, '2026-08-01 17:40:30'),
+(5, 'BC', 1, '2026-08-01 17:40:30'),
+(6, 'EWS', 1, '2026-08-01 17:40:30');
 
 -- --------------------------------------------------------
 
@@ -55,6 +80,107 @@ INSERT INTO `classes` (`id`, `class_name`, `class_order`, `status`, `created_at`
 (13, 'X', 13, 1, '2026-08-01 15:49:04'),
 (14, 'XI', 14, 1, '2026-08-01 15:49:04'),
 (15, 'XII', 15, 1, '2026-08-01 15:49:04');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `concessions`
+--
+
+CREATE TABLE `concessions` (
+  `id` int(11) NOT NULL,
+  `concession_name` varchar(100) NOT NULL,
+  `concession_amount` decimal(10,2) DEFAULT 0.00,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `concessions`
+--
+
+INSERT INTO `concessions` (`id`, `concession_name`, `concession_amount`, `status`, `created_at`) VALUES
+(1, 'No Concession', 0.00, 1, '2026-08-01 17:40:30'),
+(2, 'Sibling Concession', 0.00, 1, '2026-08-01 17:40:30'),
+(3, 'Staff Concession', 0.00, 1, '2026-08-01 17:40:30'),
+(4, 'Management Concession', 0.00, 1, '2026-08-01 17:40:30'),
+(5, 'Other', 0.00, 1, '2026-08-01 17:40:30');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `games`
+--
+
+CREATE TABLE `games` (
+  `id` int(11) NOT NULL,
+  `game_name` varchar(100) NOT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `games`
+--
+
+INSERT INTO `games` (`id`, `game_name`, `status`, `created_at`) VALUES
+(1, 'Cricket', 1, '2026-08-01 17:40:30'),
+(2, 'Football', 1, '2026-08-01 17:40:30'),
+(3, 'Basketball', 1, '2026-08-01 17:40:30'),
+(4, 'Volleyball', 1, '2026-08-01 17:40:30'),
+(5, 'Badminton', 1, '2026-08-01 17:40:30'),
+(6, 'Kabaddi', 1, '2026-08-01 17:40:30'),
+(7, 'Kho-Kho', 1, '2026-08-01 17:40:30'),
+(8, 'Athletics', 1, '2026-08-01 17:40:30');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `houses`
+--
+
+CREATE TABLE `houses` (
+  `id` int(11) NOT NULL,
+  `house_name` varchar(50) NOT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `houses`
+--
+
+INSERT INTO `houses` (`id`, `house_name`, `status`, `created_at`) VALUES
+(1, 'The Pacific', 1, '2026-08-01 17:51:16'),
+(2, 'Sahara', 1, '2026-08-01 17:51:16'),
+(3, 'Himalayas', 1, '2026-08-01 17:51:16'),
+(4, 'Nile', 1, '2026-08-01 17:51:16');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `religions`
+--
+
+CREATE TABLE `religions` (
+  `id` int(11) NOT NULL,
+  `religion_name` varchar(50) NOT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `religions`
+--
+
+INSERT INTO `religions` (`id`, `religion_name`, `status`, `created_at`) VALUES
+(1, 'Islam', 1, '2026-08-01 17:40:30'),
+(2, 'Hindu', 1, '2026-08-01 17:40:30'),
+(3, 'Sikh', 1, '2026-08-01 17:40:30'),
+(4, 'Christian', 1, '2026-08-01 17:40:30'),
+(5, 'Jain', 1, '2026-08-01 17:40:30'),
+(6, 'Buddhist', 1, '2026-08-01 17:40:30'),
+(7, 'Others', 1, '2026-08-01 17:40:30');
 
 -- --------------------------------------------------------
 
@@ -111,6 +237,19 @@ INSERT INTO `sections` (`id`, `section_name`, `status`, `created_at`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `transport_routes`
+--
+
+CREATE TABLE `transport_routes` (
+  `id` int(11) NOT NULL,
+  `route_name` varchar(100) NOT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `users`
 --
 
@@ -138,9 +277,39 @@ INSERT INTO `users` (`id`, `role_id`, `full_name`, `username`, `password`, `emai
 --
 
 --
+-- Indexes for table `categories`
+--
+ALTER TABLE `categories`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Indexes for table `classes`
 --
 ALTER TABLE `classes`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `concessions`
+--
+ALTER TABLE `concessions`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `games`
+--
+ALTER TABLE `games`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `houses`
+--
+ALTER TABLE `houses`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `religions`
+--
+ALTER TABLE `religions`
   ADD PRIMARY KEY (`id`);
 
 --
@@ -157,6 +326,12 @@ ALTER TABLE `sections`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indexes for table `transport_routes`
+--
+ALTER TABLE `transport_routes`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Indexes for table `users`
 --
 ALTER TABLE `users`
@@ -169,10 +344,40 @@ ALTER TABLE `users`
 --
 
 --
+-- AUTO_INCREMENT for table `categories`
+--
+ALTER TABLE `categories`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
 -- AUTO_INCREMENT for table `classes`
 --
 ALTER TABLE `classes`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+
+--
+-- AUTO_INCREMENT for table `concessions`
+--
+ALTER TABLE `concessions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
+
+--
+-- AUTO_INCREMENT for table `games`
+--
+ALTER TABLE `games`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `houses`
+--
+ALTER TABLE `houses`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=5;
+
+--
+-- AUTO_INCREMENT for table `religions`
+--
+ALTER TABLE `religions`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `roles`
@@ -185,6 +390,12 @@ ALTER TABLE `roles`
 --
 ALTER TABLE `sections`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
+-- AUTO_INCREMENT for table `transport_routes`
+--
+ALTER TABLE `transport_routes`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- AUTO_INCREMENT for table `users`
