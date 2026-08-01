@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jul 26, 2026 at 02:58 PM
+-- Generation Time: Aug 01, 2026 at 07:02 PM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -20,6 +20,41 @@ SET time_zone = "+00:00";
 --
 -- Database: `school_erp`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `classes`
+--
+
+CREATE TABLE `classes` (
+  `id` int(11) NOT NULL,
+  `class_name` varchar(50) NOT NULL,
+  `class_order` int(11) NOT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `classes`
+--
+
+INSERT INTO `classes` (`id`, `class_name`, `class_order`, `status`, `created_at`) VALUES
+(1, 'Nursery', 1, 1, '2026-08-01 15:49:04'),
+(2, 'LKG', 2, 1, '2026-08-01 15:49:04'),
+(3, 'UKG', 3, 1, '2026-08-01 15:49:04'),
+(4, 'I', 4, 1, '2026-08-01 15:49:04'),
+(5, 'II', 5, 1, '2026-08-01 15:49:04'),
+(6, 'III', 6, 1, '2026-08-01 15:49:04'),
+(7, 'IV', 7, 1, '2026-08-01 15:49:04'),
+(8, 'V', 8, 1, '2026-08-01 15:49:04'),
+(9, 'VI', 9, 1, '2026-08-01 15:49:04'),
+(10, 'VII', 10, 1, '2026-08-01 15:49:04'),
+(11, 'VIII', 11, 1, '2026-08-01 15:49:04'),
+(12, 'IX', 12, 1, '2026-08-01 15:49:04'),
+(13, 'X', 13, 1, '2026-08-01 15:49:04'),
+(14, 'XI', 14, 1, '2026-08-01 15:49:04'),
+(15, 'XII', 15, 1, '2026-08-01 15:49:04');
 
 -- --------------------------------------------------------
 
@@ -51,6 +86,31 @@ INSERT INTO `roles` (`id`, `role_name`, `status`, `created_at`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `sections`
+--
+
+CREATE TABLE `sections` (
+  `id` int(11) NOT NULL,
+  `section_name` varchar(10) NOT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `sections`
+--
+
+INSERT INTO `sections` (`id`, `section_name`, `status`, `created_at`) VALUES
+(1, '1', 1, '2026-08-01 15:49:33'),
+(2, '2', 1, '2026-08-01 15:49:33'),
+(3, '3', 1, '2026-08-01 15:49:33'),
+(4, '4', 1, '2026-08-01 15:49:33'),
+(5, '5', 1, '2026-08-01 15:49:33'),
+(6, '6', 1, '2026-08-01 15:49:33');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `users`
 --
 
@@ -78,11 +138,23 @@ INSERT INTO `users` (`id`, `role_id`, `full_name`, `username`, `password`, `emai
 --
 
 --
+-- Indexes for table `classes`
+--
+ALTER TABLE `classes`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- Indexes for table `roles`
 --
 ALTER TABLE `roles`
   ADD PRIMARY KEY (`id`),
   ADD UNIQUE KEY `role_name` (`role_name`);
+
+--
+-- Indexes for table `sections`
+--
+ALTER TABLE `sections`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `users`
@@ -97,10 +169,22 @@ ALTER TABLE `users`
 --
 
 --
+-- AUTO_INCREMENT for table `classes`
+--
+ALTER TABLE `classes`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
+
+--
 -- AUTO_INCREMENT for table `roles`
 --
 ALTER TABLE `roles`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+
+--
+-- AUTO_INCREMENT for table `sections`
+--
+ALTER TABLE `sections`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `users`
