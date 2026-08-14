@@ -7,16 +7,26 @@ include '../../includes/header.php';
 include '../../includes/navbar.php';
 include '../../includes/sidebar.php';
 
-$classes=mysqli_query($conn,"SELECT * FROM classes WHERE status=1 ORDER BY class_order");
-$sections=mysqli_query($conn,"SELECT * FROM sections WHERE status=1 ORDER BY section_name");
-$subjects=mysqli_query($conn,"SELECT * FROM subjects WHERE status=1 ORDER BY subject_name");
-$exams=mysqli_query($conn,"SELECT * FROM exams WHERE status=1 ORDER BY start_date DESC");
+$classes  = mysqli_query($conn,"SELECT * FROM classes WHERE status=1 ORDER BY class_order");
+$sections = mysqli_query($conn,"SELECT * FROM sections WHERE status=1 ORDER BY section_name");
+$exams    = mysqli_query($conn,"SELECT * FROM exams WHERE status=1 ORDER BY start_date DESC");
 ?>
 
 <div class="content-wrapper">
 
 <section class="content-header">
 <div class="container-fluid">
+    <?php if(isset($_GET['saved'])){ ?>
+
+<div class="alert alert-success alert-dismissible fade show">
+
+<strong>Success!</strong> Marks saved successfully.
+
+<button type="button" class="close" data-dismiss="alert">&times;</button>
+
+</div>
+
+<?php } ?>
 <h1>Marks Entry</h1>
 </div>
 </section>
@@ -27,8 +37,8 @@ $exams=mysqli_query($conn,"SELECT * FROM exams WHERE status=1 ORDER BY start_dat
 
 <div class="card">
 
-<div class="card-header">
-<h3 class="card-title">Select Examination</h3>
+<div class="card-header bg-primary text-white">
+Select Examination
 </div>
 
 <div class="card-body">
@@ -40,83 +50,66 @@ $exams=mysqli_query($conn,"SELECT * FROM exams WHERE status=1 ORDER BY start_dat
 <div class="col-md-3">
 <label>Class</label>
 <select name="class_id" class="form-control" required>
-
 <option value="">Select</option>
-
-<?php while($row=mysqli_fetch_assoc($classes)){ ?>
-
-<option value="<?php echo $row['id'];?>">
-
-<?php echo $row['class_name'];?>
-
+<?php while($c=mysqli_fetch_assoc($classes)){ ?>
+<option value="<?= $c['id']; ?>" <?= (isset($_GET['class_id']) && $_GET['class_id']==$c['id'])?'selected':''; ?>>
+<?= $c['class_name']; ?>
 </option>
-
 <?php } ?>
-
 </select>
 </div>
 
 <div class="col-md-3">
-
 <label>Section</label>
-
 <select name="section_id" class="form-control" required>
-
 <option value="">Select</option>
-
-<?php while($row=mysqli_fetch_assoc($sections)){ ?>
-
-<option value="<?php echo $row['id'];?>">
-
-<?php echo $row['section_name'];?>
-
+<?php while($s=mysqli_fetch_assoc($sections)){ ?>
+<option value="<?= $s['id']; ?>" <?= (isset($_GET['section_id']) && $_GET['section_id']==$s['id'])?'selected':''; ?>>
+<?= $s['section_name']; ?>
 </option>
-
 <?php } ?>
-
 </select>
-
 </div>
 
 <div class="col-md-3">
-
 <label>Exam</label>
-
 <select name="exam_id" class="form-control" required>
-
 <option value="">Select</option>
-
-<?php while($row=mysqli_fetch_assoc($exams)){ ?>
-
-<option value="<?php echo $row['id'];?>">
-
-<?php echo $row['exam_name'];?>
-
+<?php while($e=mysqli_fetch_assoc($exams)){ ?>
+<option value="<?= $e['id']; ?>" <?= (isset($_GET['exam_id']) && $_GET['exam_id']==$e['id'])?'selected':''; ?>>
+<?= $e['exam_name']; ?>
 </option>
-
 <?php } ?>
-
 </select>
-
 </div>
 
 <div class="col-md-3">
-
 <label>Subject</label>
 
 <select name="subject_id" class="form-control" required>
 
 <option value="">Select</option>
 
-<?php while($row=mysqli_fetch_assoc($subjects)){ ?>
+<?php
+if(isset($_GET['class_id'])){
 
-<option value="<?php echo $row['id'];?>">
+$class=(int)$_GET['class_id'];
 
-<?php echo $row['subject_name'];?>
+$subjects=mysqli_query($conn,"
+SELECT s.id,s.subject_name
+FROM class_subjects cs
+JOIN subjects s ON cs.subject_id=s.id
+WHERE cs.class_id='$class'
+ORDER BY s.subject_name");
 
+while($sub=mysqli_fetch_assoc($subjects)){
+?>
+
+<option value="<?= $sub['id']; ?>" <?= (isset($_GET['subject_id']) && $_GET['subject_id']==$sub['id'])?'selected':''; ?>>
+<?= $sub['subject_name']; ?>
 </option>
 
-<?php } ?>
+<?php } } ?>
 
 </select>
 
@@ -127,9 +120,7 @@ $exams=mysqli_query($conn,"SELECT * FROM exams WHERE status=1 ORDER BY start_dat
 <br>
 
 <button class="btn btn-primary">
-
 Load Students
-
 </button>
 
 </form>
@@ -140,47 +131,46 @@ Load Students
 
 <?php
 
-if(isset($_GET['class_id'])){
+if(isset($_GET['class_id']) && isset($_GET['section_id']) && isset($_GET['subject_id']) && isset($_GET['exam_id'])){
 
-$class=$_GET['class_id'];
-$section=$_GET['section_id'];
+$class=(int)$_GET['class_id'];
+$section=(int)$_GET['section_id'];
+$subject=(int)$_GET['subject_id'];
+$exam=(int)$_GET['exam_id'];
 
-$students=mysqli_query($conn,"SELECT * FROM students
+$students=mysqli_query($conn,"
+SELECT *
+FROM students
 WHERE class_id='$class'
 AND section_id='$section'
 AND status=1
 ORDER BY roll_no");
-
 ?>
 
 <form method="POST" action="save_marks.php">
 
-<input type="hidden" name="class_id" value="<?php echo $class;?>">
-<input type="hidden" name="section_id" value="<?php echo $section;?>">
-<input type="hidden" name="exam_id" value="<?php echo $_GET['exam_id'];?>">
-<input type="hidden" name="subject_id" value="<?php echo $_GET['subject_id'];?>">
+<input type="hidden" name="class_id" value="<?= $class;?>">
+<input type="hidden" name="section_id" value="<?= $section;?>">
+<input type="hidden" name="subject_id" value="<?= $subject;?>">
+<input type="hidden" name="exam_id" value="<?= $exam;?>">
 
 <div class="card">
 
-<div class="card-header">
-
-<h3 class="card-title">Enter Marks</h3>
-
+<div class="card-header bg-success text-white">
+Enter Marks
 </div>
 
-<div class="card-body">
+<div class="card-body table-responsive">
 
-<table class="table table-bordered">
+<table class="table table-bordered table-striped">
 
 <thead>
 
 <tr>
 
-<th>Roll No</th>
-
-<th>Student</th>
-
-<th>Marks</th>
+<th width="100">Roll No</th>
+<th>Student Name</th>
+<th width="150">Marks</th>
 
 </tr>
 
@@ -188,23 +178,24 @@ ORDER BY roll_no");
 
 <tbody>
 
-<?php while($s=mysqli_fetch_assoc($students)){ ?>
+<?php while($stu=mysqli_fetch_assoc($students)){ ?>
 
 <tr>
 
-<td><?php echo $s['roll_no'];?></td>
+<td><?= $stu['roll_no']; ?></td>
 
-<td><?php echo $s['student_name'];?></td>
+<td><?= $stu['student_name']; ?></td>
 
 <td>
 
 <input
 type="number"
 step="0.5"
-name="marks[<?php echo $s['id'];?>]"
-class="form-control"
 min="0"
-max="100">
+max="100"
+name="marks[<?= $stu['id']; ?>]"
+class="form-control"
+placeholder="0-100">
 
 </td>
 
@@ -221,9 +212,7 @@ max="100">
 <div class="card-footer">
 
 <button class="btn btn-success">
-
 Save Marks
-
 </button>
 
 </div>
