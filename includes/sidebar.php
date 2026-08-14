@@ -2,12 +2,10 @@
 <aside class="main-sidebar sidebar-dark-primary elevation-4">
 
     <!-- Brand Logo -->
-    <a href="<?= BASE_URL; ?>/admin/dashboard.php" class="brand-link">
-
+    <a href="<?= BASE_URL; ?>/modules/dashboard/index.php" class="brand-link">
         <span class="brand-text font-weight-light">
             Oasis Public School ERP
         </span>
-
     </a>
 
     <!-- Sidebar -->
@@ -22,7 +20,7 @@
 
             <div class="info">
                 <a href="#" class="d-block">
-                    Mohammad Imran
+                    <?= $_SESSION['full_name'] ?? 'Administrator'; ?>
                 </a>
             </div>
 
@@ -36,83 +34,67 @@
                 role="menu"
                 data-accordion="false">
 
+                <!-- Dashboard -->
                 <li class="nav-item">
-                    <a href="<?= BASE_URL; ?>/modules/dashboard/index.php
-
+                    <a href="<?= BASE_URL; ?>/modules/dashboard/index.php" class="nav-link">
                         <i class="nav-icon fas fa-tachometer-alt"></i>
-
                         <p>Dashboard</p>
-
                     </a>
                 </li>
 
+                <!-- Students -->
                 <li class="nav-item">
-                    <a href="#" class="nav-link">
-
+                    <a href="<?= BASE_URL; ?>/modules/students/index.php" class="nav-link">
                         <i class="nav-icon fas fa-user-graduate"></i>
-
                         <p>Students</p>
-
                     </a>
                 </li>
 
+                <!-- Teachers -->
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-
                         <i class="nav-icon fas fa-chalkboard-teacher"></i>
-
                         <p>Teachers</p>
-
                     </a>
                 </li>
 
+                <!-- Attendance -->
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-
                         <i class="nav-icon fas fa-calendar-check"></i>
-
                         <p>Attendance</p>
-
                     </a>
                 </li>
 
+                <!-- Fees -->
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-
                         <i class="nav-icon fas fa-rupee-sign"></i>
-
                         <p>Fees</p>
-
                     </a>
                 </li>
 
+                <!-- Examinations -->
                 <li class="nav-item">
-                    <a href="#" class="nav-link">
-
+                    <a href="<?= BASE_URL; ?>/modules/exams/index.php" class="nav-link">
                         <i class="nav-icon fas fa-file-alt"></i>
-
                         <p>Examinations</p>
-
                     </a>
                 </li>
 
+                <!-- Reports -->
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-
                         <i class="nav-icon fas fa-chart-bar"></i>
-
                         <p>Reports</p>
-
                     </a>
                 </li>
 
+                <!-- Settings -->
                 <li class="nav-item">
                     <a href="#" class="nav-link">
-
                         <i class="nav-icon fas fa-cogs"></i>
-
                         <p>Settings</p>
-
                     </a>
                 </li>
 
