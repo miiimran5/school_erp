@@ -75,13 +75,33 @@
                 </li>
 
                 <!-- Examinations -->
-                <li class="nav-item">
-                    <a href="<?= BASE_URL; ?>/modules/exams/index.php" class="nav-link">
-                        <i class="nav-icon fas fa-file-alt"></i>
-                        <p>Examinations</p>
-                    </a>
-                </li>
+                <li class="nav-item has-treeview">
+    <a href="#" class="nav-link">
+        <i class="nav-icon fas fa-file-alt"></i>
+        <p>
+            Examinations
+            <i class="right fas fa-angle-left"></i>
+        </p>
+    </a>
 
+    <ul class="nav nav-treeview">
+
+        <li class="nav-item">
+            <a href="<?= BASE_URL; ?>/modules/exams/index.php" class="nav-link">
+                <i class="far fa-circle nav-icon"></i>
+                <p>Marks Entry</p>
+            </a>
+        </li>
+
+        <li class="nav-item">
+            <a href="<?= BASE_URL; ?>/modules/exams/import_marks.php" class="nav-link">
+    <i class="far fa-circle nav-icon"></i>
+    <p>Import Marks</p>
+</a>
+        </li>
+
+    </ul>
+</li>
                 <!-- Reports -->
                 <li class="nav-item">
                     <a href="#" class="nav-link">
