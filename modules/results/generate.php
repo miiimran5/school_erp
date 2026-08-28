@@ -1,31 +1,119 @@
 <?php
 /**
- * SCHOOL ERP
- * T-037 - CBSE Result Generator
- * Step 2 - Generate Result
+ * ============================================================
+ * SCHOOL ERP - T-037
+ * CBSE HOLISTIC PROGRESS CARD (HPC)
+ * FINAL generate.php
+ * ============================================================
  *
  * File:
- * modules/results/generate.php
+ * C:\xampp\htdocs\school_erp\modules\results\generate.php
+ *
+ * URL Example:
+ * http://localhost/school_erp/modules/results/generate.php
+ * ?class_id=7&section_id=13&exam_id=4
+ *
+ * DATABASE:
+ * school_erp
+ *
+ * Connection:
+ * ../../config/db.php
+ *
+ * ============================================================
  */
 
-require_once '../../config/database.php';
+session_start();
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
+/*
+|--------------------------------------------------------------------------
+| DATABASE CONNECTION
+|--------------------------------------------------------------------------
+| We created this file:
+|
+| C:\xampp\htdocs\school_erp\config\db.php
+|
+*/
+
+require_once __DIR__ . '/../../config/db.php';
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
-    die("Database connection not found.");
+    die("Database connection not available.");
+}
+
+if ($conn->connect_errno) {
+    die("Database connection failed: " . htmlspecialchars($conn->connect_error));
 }
 
 $conn->set_charset("utf8mb4");
 
 
-/* =========================================================
-   HELPER FUNCTION
-   ========================================================= */
+/*
+|--------------------------------------------------------------------------
+| INPUT
+|--------------------------------------------------------------------------
+*/
 
-function e($value)
+$class_id   = isset($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
+$section_id = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
+$exam_id    = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
+
+if ($class_id <= 0 || $section_id <= 0 || $exam_id <= 0) {
+    die("Invalid Class, Section or Examination.");
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| PRINT SETTINGS
+|--------------------------------------------------------------------------
+*/
+
+$left_margin = isset($_GET['left_margin'])
+    ? (float)$_GET['left_margin']
+    : 0.75;
+
+$right_margin = isset($_GET['right_margin'])
+    ? (float)$_GET['right_margin']
+    : 0.75;
+
+$top_margin = isset($_GET['top_margin'])
+    ? (float)$_GET['top_margin']
+    : 0.50;
+
+$bottom_margin = isset($_GET['bottom_margin'])
+    ? (float)$_GET['bottom_margin']
+    : 0.50;
+
+$font_size = isset($_GET['font_size'])
+    ? (float)$_GET['font_size']
+    : 8;
+
+$cell_padding = isset($_GET['cell_padding'])
+    ? (float)$_GET['cell_padding']
+    : 1.5;
+
+
+/*
+|--------------------------------------------------------------------------
+| LIMIT VALUES
+|--------------------------------------------------------------------------
+*/
+
+$left_margin   = max(0.30, min(2.50, $left_margin));
+$right_margin  = max(0.30, min(2.50, $right_margin));
+$top_margin    = max(0.30, min(2.50, $top_margin));
+$bottom_margin = max(0.30, min(2.50, $bottom_margin));
+$font_size     = max(6, min(12, $font_size));
+$cell_padding  = max(0, min(5, $cell_padding));
+
+
+/*
+|--------------------------------------------------------------------------
+| HELPER FUNCTIONS
+|--------------------------------------------------------------------------
+*/
+
+function h($value)
 {
     return htmlspecialchars(
         (string)$value,
@@ -35,706 +123,1131 @@ function e($value)
 }
 
 
-/* =========================================================
-   GET PARAMETERS
-   ========================================================= */
+function cleanNumber($value)
+{
+    if ($value === null || $value === '') {
+        return '';
+    }
 
-$class_id = isset($_GET['class_id'])
-    ? (int)$_GET['class_id']
-    : 0;
+    $value = (float)$value;
 
-$section_id = isset($_GET['section_id'])
-    ? (int)$_GET['section_id']
-    : 0;
+    if (floor($value) == $value) {
+        return number_format($value, 0);
+    }
 
-$exam_id = isset($_GET['exam_id'])
-    ? (int)$_GET['exam_id']
-    : 0;
-
-
-/* =========================================================
-   VALIDATE PARAMETERS
-   ========================================================= */
-
-if ($class_id <= 0 || $section_id <= 0 || $exam_id <= 0) {
-
-    die("
-        <div style='
-            font-family:Arial;
-            padding:30px;
-            text-align:center;
-        '>
-
-            <h2>Invalid Result Request</h2>
-
-            <p>
-                Please select Class, Section and Examination.
-            </p>
-
-            <a href='index.php'>
-                ← Back to Result Generator
-            </a>
-
-        </div>
-    ");
+    return number_format($value, 2);
 }
 
 
-/* =========================================================
-   GET CLASS
-   ========================================================= */
+function gradeFromPercentage($percentage)
+{
+    $percentage = (float)$percentage;
+
+    if ($percentage >= 91) {
+        return 'A1';
+    }
+
+    if ($percentage >= 81) {
+        return 'A2';
+    }
+
+    if ($percentage >= 71) {
+        return 'B1';
+    }
+
+    if ($percentage >= 61) {
+        return 'B2';
+    }
+
+    if ($percentage >= 51) {
+        return 'C1';
+    }
+
+    if ($percentage >= 41) {
+        return 'C2';
+    }
+
+    if ($percentage >= 33) {
+        return 'D';
+    }
+
+    return 'E';
+}
+
+
+function resultStatus($percentage)
+{
+    return ((float)$percentage >= 33)
+        ? 'PASS'
+        : 'FAIL';
+}
+
+
+function tableExists($conn, $table)
+{
+    $table = $conn->real_escape_string($table);
+
+    $sql = "
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.tables
+        WHERE table_schema = DATABASE()
+        AND table_name = '$table'
+    ";
+
+    $result = $conn->query($sql);
+
+    if (!$result) {
+        return false;
+    }
+
+    $row = $result->fetch_assoc();
+
+    return ((int)$row['cnt'] > 0);
+}
+
+
+function columnExists($conn, $table, $column)
+{
+    $table  = $conn->real_escape_string($table);
+    $column = $conn->real_escape_string($column);
+
+    $sql = "
+        SELECT COUNT(*) AS cnt
+        FROM information_schema.columns
+        WHERE table_schema = DATABASE()
+        AND table_name = '$table'
+        AND column_name = '$column'
+    ";
+
+    $result = $conn->query($sql);
+
+    if (!$result) {
+        return false;
+    }
+
+    $row = $result->fetch_assoc();
+
+    return ((int)$row['cnt'] > 0);
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| GET CLASS
+|--------------------------------------------------------------------------
+*/
 
 $class_name = '';
 
-$class_stmt = $conn->prepare("
+$stmt = $conn->prepare("
     SELECT class_name
     FROM classes
     WHERE id = ?
     LIMIT 1
 ");
 
-$class_stmt->bind_param(
-    "i",
-    $class_id
-);
-
-$class_stmt->execute();
-
-$class_result = $class_stmt->get_result();
-
-if ($class_result->num_rows === 0) {
-
-    die("Selected class was not found.");
+if (!$stmt) {
+    die("Class query error: " . h($conn->error));
 }
 
-$class_data = $class_result->fetch_assoc();
+$stmt->bind_param("i", $class_id);
+$stmt->execute();
 
-$class_name = $class_data['class_name'];
+$result = $stmt->get_result();
 
-$class_stmt->close();
+if ($row = $result->fetch_assoc()) {
+    $class_name = $row['class_name'];
+}
+
+$stmt->close();
 
 
-/* =========================================================
-   GET SECTION
-   ========================================================= */
+if ($class_name === '') {
+    die("Class not found.");
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| GET SECTION
+|--------------------------------------------------------------------------
+*/
 
 $section_name = '';
 
-$section_stmt = $conn->prepare("
+$stmt = $conn->prepare("
     SELECT section_name
     FROM sections
     WHERE id = ?
     LIMIT 1
 ");
 
-$section_stmt->bind_param(
-    "i",
-    $section_id
-);
-
-$section_stmt->execute();
-
-$section_result = $section_stmt->get_result();
-
-if ($section_result->num_rows === 0) {
-
-    die("Selected section was not found.");
+if (!$stmt) {
+    die("Section query error: " . h($conn->error));
 }
 
-$section_data = $section_result->fetch_assoc();
+$stmt->bind_param("i", $section_id);
+$stmt->execute();
 
-$section_name = $section_data['section_name'];
+$result = $stmt->get_result();
 
-$section_stmt->close();
+if ($row = $result->fetch_assoc()) {
+    $section_name = $row['section_name'];
+}
+
+$stmt->close();
 
 
-/* =========================================================
-   GET EXAM
-   ========================================================= */
+if ($section_name === '') {
+    die("Section not found.");
+}
 
-$exam_name = '';
 
-$exam_stmt = $conn->prepare("
-    SELECT exam_name
+/*
+|--------------------------------------------------------------------------
+| GET EXAM
+|--------------------------------------------------------------------------
+| IMPORTANT:
+| We do NOT use et.exam_type.
+| Your exams table contains exam_type_id.
+|--------------------------------------------------------------------------
+*/
+
+$exam = null;
+
+$stmt = $conn->prepare("
+    SELECT
+        id,
+        exam_name,
+        exam_type_id,
+        session_id,
+        start_date,
+        end_date,
+        status
     FROM exams
     WHERE id = ?
     LIMIT 1
 ");
 
-$exam_stmt->bind_param(
-    "i",
-    $exam_id
-);
-
-$exam_stmt->execute();
-
-$exam_result = $exam_stmt->get_result();
-
-if ($exam_result->num_rows === 0) {
-
-    die("Selected examination was not found.");
+if (!$stmt) {
+    die("Exam query error: " . h($conn->error));
 }
 
-$exam_data = $exam_result->fetch_assoc();
+$stmt->bind_param("i", $exam_id);
+$stmt->execute();
 
-$exam_name = $exam_data['exam_name'];
+$result = $stmt->get_result();
 
-$exam_stmt->close();
+if ($row = $result->fetch_assoc()) {
+    $exam = $row;
+}
+
+$stmt->close();
 
 
-/* =========================================================
-   GET STUDENTS + MARKS
-   ========================================================= */
+if (!$exam) {
+    die("Examination not found.");
+}
+
+$exam_name = $exam['exam_name'];
+
+
+/*
+|--------------------------------------------------------------------------
+| GET ACADEMIC SESSION
+|--------------------------------------------------------------------------
+*/
+
+$session_name = '';
+
+if (!empty($exam['session_id'])) {
+
+    $stmt = $conn->prepare("
+        SELECT session_name
+        FROM academic_sessions
+        WHERE id = ?
+        LIMIT 1
+    ");
+
+    if ($stmt) {
+
+        $stmt->bind_param(
+            "i",
+            $exam['session_id']
+        );
+
+        $stmt->execute();
+
+        $result = $stmt->get_result();
+
+        if ($row = $result->fetch_assoc()) {
+            $session_name = $row['session_name'];
+        }
+
+        $stmt->close();
+    }
+}
+
+
+if ($session_name === '') {
+    $session_name = '2025-26';
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| DETERMINE CURRENT TERM
+|--------------------------------------------------------------------------
+*/
+
+$exam_lower = strtolower($exam_name);
+
+$current_term = 'TERM-I';
+
+if (
+    strpos($exam_lower, 'term ii') !== false ||
+    strpos($exam_lower, 'term-ii') !== false ||
+    strpos($exam_lower, 'term 2') !== false ||
+    strpos($exam_lower, 'term-2') !== false ||
+    strpos($exam_lower, 'annual') !== false ||
+    strpos($exam_lower, 'final') !== false
+) {
+    $current_term = 'TERM-II';
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| CHECK HPC COMPONENT COLUMNS
+|--------------------------------------------------------------------------
+|
+| Current marks table supplied by you contains:
+|
+| id
+| student_id
+| class_id
+| section_id
+| subject_id
+| exam_id
+| max_marks
+| obtained_marks
+| remarks
+|
+| If PA/SE/NB/Written columns are later added, this code
+| automatically detects them.
+|--------------------------------------------------------------------------
+*/
+
+$has_pa = columnExists(
+    $conn,
+    'marks',
+    'pa_marks'
+);
+
+$has_se = columnExists(
+    $conn,
+    'marks',
+    'se_marks'
+);
+
+$has_nb = columnExists(
+    $conn,
+    'marks',
+    'nb_marks'
+);
+
+$has_written = columnExists(
+    $conn,
+    'marks',
+    'written_marks'
+);
+
+
+/*
+|--------------------------------------------------------------------------
+| MARK FIELD SQL
+|--------------------------------------------------------------------------
+*/
+
+$pa_sql = $has_pa
+    ? "m.pa_marks"
+    : "NULL";
+
+$se_sql = $has_se
+    ? "m.se_marks"
+    : "NULL";
+
+$nb_sql = $has_nb
+    ? "m.nb_marks"
+    : "NULL";
+
+$written_sql = $has_written
+    ? "m.written_marks"
+    : "NULL";
+
+
+/*
+|--------------------------------------------------------------------------
+| GET STUDENTS
+|--------------------------------------------------------------------------
+*/
 
 $students = [];
 
-/*
- * We use LEFT JOIN so students still appear even if
- * marks are not entered for every subject.
- */
-
-$student_stmt = $conn->prepare("
+$stmt = $conn->prepare("
     SELECT
-        s.id AS student_id,
-        s.admission_no,
-        s.roll_no,
-        s.student_name,
-        s.father_name,
-
-        m.id AS mark_id,
-        m.subject_id,
-        m.max_marks,
-        m.obtained_marks,
-        m.remarks,
-
-        sub.subject_name,
-        sub.subject_code,
-        sub.subject_type
-
-    FROM students s
-
-    LEFT JOIN marks m
-        ON m.student_id = s.id
-        AND m.class_id = s.class_id
-        AND m.section_id = s.section_id
-        AND m.exam_id = ?
-
-    LEFT JOIN subjects sub
-        ON sub.id = m.subject_id
-
-    WHERE s.class_id = ?
-      AND s.section_id = ?
-      AND s.status = 1
-
+        id,
+        admission_no,
+        admission_date,
+        class_id,
+        section_id,
+        house_id,
+        roll_no,
+        student_name,
+        gender,
+        dob,
+        blood_group,
+        category,
+        father_name,
+        father_occupation,
+        father_mobile,
+        mother_name,
+        mother_occupation,
+        mother_mobile,
+        guardian_name,
+        guardian_mobile,
+        alternate_mobile,
+        address,
+        city,
+        district,
+        state,
+        pincode,
+        house,
+        transport,
+        game,
+        concession,
+        medical_information,
+        photo,
+        status
+    FROM students
+    WHERE class_id = ?
+    AND section_id = ?
+    AND status = 1
     ORDER BY
         CASE
-            WHEN s.roll_no REGEXP '^[0-9]+$'
-            THEN CAST(s.roll_no AS UNSIGNED)
-            ELSE 999999
+            WHEN roll_no IS NULL OR roll_no = ''
+            THEN 999999
+            ELSE CAST(roll_no AS UNSIGNED)
         END,
-        s.student_name ASC
+        student_name
 ");
 
+if (!$stmt) {
+    die("Student query error: " . h($conn->error));
+}
 
-$student_stmt->bind_param(
-    "iii",
-    $exam_id,
+$stmt->bind_param(
+    "ii",
     $class_id,
     $section_id
 );
 
-$student_stmt->execute();
+$stmt->execute();
 
-$student_result = $student_stmt->get_result();
+$result = $stmt->get_result();
+
+while ($row = $result->fetch_assoc()) {
+    $students[] = $row;
+}
+
+$stmt->close();
 
 
-/* =========================================================
-   BUILD STUDENT RESULT ARRAY
-   ========================================================= */
+/*
+|--------------------------------------------------------------------------
+| GET SUBJECTS
+|--------------------------------------------------------------------------
+|
+| First get subjects appearing in marks for this examination.
+| If none exist, get all active Scholastic subjects.
+|--------------------------------------------------------------------------
+*/
 
-while ($row = $student_result->fetch_assoc()) {
+$subjects = [];
+
+$stmt = $conn->prepare("
+    SELECT DISTINCT
+        s.id,
+        s.subject_name,
+        s.subject_code,
+        s.subject_type
+    FROM marks m
+    INNER JOIN subjects s
+        ON s.id = m.subject_id
+    WHERE m.class_id = ?
+    AND m.section_id = ?
+    AND m.exam_id = ?
+    ORDER BY s.id
+");
+
+if ($stmt) {
+
+    $stmt->bind_param(
+        "iii",
+        $class_id,
+        $section_id,
+        $exam_id
+    );
+
+    $stmt->execute();
+
+    $result = $stmt->get_result();
+
+    while ($row = $result->fetch_assoc()) {
+        $subjects[] = $row;
+    }
+
+    $stmt->close();
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| IF NO MARKS SUBJECTS FOUND
+|--------------------------------------------------------------------------
+*/
+
+if (count($subjects) === 0) {
+
+    $result = $conn->query("
+        SELECT
+            id,
+            subject_name,
+            subject_code,
+            subject_type
+        FROM subjects
+        WHERE status = 1
+        ORDER BY id
+    ");
+
+    if ($result) {
+
+        while ($row = $result->fetch_assoc()) {
+            $subjects[] = $row;
+        }
+    }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| SEPARATE SCHOLASTIC / OTHER SUBJECTS
+|--------------------------------------------------------------------------
+*/
+
+$scholasticSubjects = [];
+$otherSubjects = [];
+
+foreach ($subjects as $subject) {
+
+    $type = strtolower(
+        trim(
+            (string)$subject['subject_type']
+        )
+    );
+
+    if (
+        $type === '' ||
+        $type === 'scholastic'
+    ) {
+
+        $scholasticSubjects[] = $subject;
+
+    } else {
+
+        $otherSubjects[] = $subject;
+    }
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| GET MARKS
+|--------------------------------------------------------------------------
+*/
+
+$studentMarks = [];
+
+$stmt = $conn->prepare("
+    SELECT
+        m.id,
+        m.student_id,
+        m.subject_id,
+        m.class_id,
+        m.section_id,
+        m.exam_id,
+        m.max_marks,
+        m.obtained_marks,
+        m.remarks,
+        $pa_sql AS pa_marks,
+        $se_sql AS se_marks,
+        $nb_sql AS nb_marks,
+        $written_sql AS written_marks
+    FROM marks m
+    WHERE m.class_id = ?
+    AND m.section_id = ?
+    AND m.exam_id = ?
+");
+
+if (!$stmt) {
+    die("Marks query error: " . h($conn->error));
+}
+
+$stmt->bind_param(
+    "iii",
+    $class_id,
+    $section_id,
+    $exam_id
+);
+
+$stmt->execute();
+
+$result = $stmt->get_result();
+
+while ($row = $result->fetch_assoc()) {
 
     $student_id = (int)$row['student_id'];
+    $subject_id = (int)$row['subject_id'];
 
-    if (!isset($students[$student_id])) {
-
-        $students[$student_id] = [
-
-            'student_id' => $student_id,
-
-            'admission_no' =>
-                $row['admission_no'],
-
-            'roll_no' =>
-                $row['roll_no'],
-
-            'student_name' =>
-                $row['student_name'],
-
-            'father_name' =>
-                $row['father_name'],
-
-            'subjects' => [],
-
-            'total_marks' => 0,
-
-            'total_max_marks' => 0,
-
-            'percentage' => 0,
-
-            'grade' => '',
-
-            'result' => 'PASS'
-        ];
+    if (!isset($studentMarks[$student_id])) {
+        $studentMarks[$student_id] = [];
     }
 
-
-    /*
-     * Add subject only when a mark record exists.
-     */
-
-    if (!empty($row['mark_id'])) {
-
-        $max_marks =
-            (float)$row['max_marks'];
-
-        $obtained_marks =
-            (float)$row['obtained_marks'];
-
-        $students[$student_id]['subjects'][] = [
-
-            'subject_id' =>
-                $row['subject_id'],
-
-            'subject_name' =>
-                $row['subject_name'],
-
-            'subject_code' =>
-                $row['subject_code'],
-
-            'subject_type' =>
-                $row['subject_type'],
-
-            'max_marks' =>
-                $max_marks,
-
-            'obtained_marks' =>
-                $obtained_marks,
-
-            'remarks' =>
-                $row['remarks']
-        ];
-
-        /*
-         * Calculate totals
-         */
-
-        $students[$student_id]['total_marks']
-            += $obtained_marks;
-
-        $students[$student_id]['total_max_marks']
-            += $max_marks;
-    }
+    $studentMarks[$student_id][$subject_id] = $row;
 }
 
-$student_stmt->close();
+$stmt->close();
 
 
-/* =========================================================
-   CALCULATE PERCENTAGE + GRADE + RESULT
-   ========================================================= */
+/*
+|--------------------------------------------------------------------------
+| HPC OBSERVATION ITEMS
+|--------------------------------------------------------------------------
+*/
 
-foreach ($students as &$student) {
+$lifeSkills = [
+    'Critical Thinking',
+    'Problem Solving',
+    'Communication'
+];
 
-    $total =
-        $student['total_marks'];
+$sel = [
+    'Respect for Others',
+    'Responsibility',
+    'Honesty',
+    'Empathy'
+];
 
-    $maximum =
-        $student['total_max_marks'];
+$positiveHabits = [
+    'Work Habits',
+    'Time Management',
+    'Organization',
+    'Initiative',
+    'Perseverance'
+];
 
-
-    /*
-     * Percentage
-     */
-
-    if ($maximum > 0) {
-
-        $student['percentage'] =
-            ($total / $maximum) * 100;
-
-    } else {
-
-        $student['percentage'] = 0;
-    }
-
-
-    /*
-     * Overall Grade
-     *
-     * CBSE-style grading scale
-     */
-
-    $percentage =
-        $student['percentage'];
+$coCurricular = [
+    'Leadership Role',
+    'Team Work Collaboration'
+];
 
 
-    if ($percentage >= 91) {
+/*
+|--------------------------------------------------------------------------
+| DEFAULT OBSERVATION
+|--------------------------------------------------------------------------
+|
+| For now these display PF until the teacher-upload/import
+| observation storage is connected.
+|
+*/
 
-        $student['grade'] = 'A1';
-
-    } elseif ($percentage >= 81) {
-
-        $student['grade'] = 'A2';
-
-    } elseif ($percentage >= 71) {
-
-        $student['grade'] = 'B1';
-
-    } elseif ($percentage >= 61) {
-
-        $student['grade'] = 'B2';
-
-    } elseif ($percentage >= 51) {
-
-        $student['grade'] = 'C1';
-
-    } elseif ($percentage >= 41) {
-
-        $student['grade'] = 'C2';
-
-    } elseif ($percentage >= 33) {
-
-        $student['grade'] = 'D';
-
-    } else {
-
-        $student['grade'] = 'E';
-    }
+$default_observation = 'PF';
 
 
-    /*
-     * Pass / Fail
-     *
-     * Current rule:
-     * Overall percentage must be at least 33%.
-     *
-     * Subject-wise fail checking will be added
-     * in the next stage.
-     */
-
-    if ($percentage < 33) {
-
-        $student['result'] = 'FAIL';
-
-    } else {
-
-        $student['result'] = 'PASS';
-    }
-}
-
-unset($student);
-
-
-/* =========================================================
-   COUNT STUDENTS
-   ========================================================= */
-
-$total_students =
-    count($students);
-
-
-/* =========================================================
-   COUNT PASS / FAIL
-   ========================================================= */
-
-$pass_count = 0;
-$fail_count = 0;
-
-foreach ($students as $student) {
-
-    if ($student['result'] === 'PASS') {
-
-        $pass_count++;
-
-    } else {
-
-        $fail_count++;
-    }
-}
+/*
+|--------------------------------------------------------------------------
+| HTML START
+|--------------------------------------------------------------------------
+*/
 
 ?>
 <!DOCTYPE html>
-
 <html lang="en">
 
 <head>
 
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
 
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+<title>
+HOLISTIC PROGRESS CARD -
+<?= h($session_name); ?>
+</title>
 
-    <title>
-        Generate Result - School ERP
-    </title>
+<meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+>
 
+<style>
 
-    <!-- Bootstrap -->
+/* ============================================================
+   PAGE
+   ============================================================ */
 
-    <link
-        rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"
-    >
+@page {
 
+    size: A4 portrait;
 
-    <!-- Font Awesome -->
+    margin:
+        <?= $top_margin; ?>cm
+        <?= $right_margin; ?>cm
+        <?= $bottom_margin; ?>cm
+        <?= $left_margin; ?>cm;
+}
 
-    <link
-        rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
-    >
 
+/* ============================================================
+   GLOBAL
+   ============================================================ */
 
-    <style>
+* {
+    box-sizing: border-box;
+}
 
-        body {
+html,
+body {
+    margin: 0;
+    padding: 0;
+}
 
-            background: #f4f6f9;
+body {
 
-            font-family:
-                Arial,
-                Helvetica,
-                sans-serif;
-        }
+    font-family:
+        Arial,
+        Helvetica,
+        sans-serif;
 
+    font-size:
+        <?= $font_size; ?>pt;
 
-        .page-wrapper {
+    color: #000;
 
-            padding: 25px;
+    background: #e8e8e8;
+}
 
-            min-height: 100vh;
-        }
 
+/* ============================================================
+   PRINT SETTINGS
+   ============================================================ */
 
-        .result-header {
+.print-settings {
 
-            background: white;
+    width: 100%;
 
-            border-radius: 8px;
+    max-width: 1100px;
 
-            padding: 20px;
+    margin: 10px auto;
 
-            margin-bottom: 20px;
+    padding: 10px;
 
-            box-shadow:
-                0 2px 10px
-                rgba(0,0,0,0.08);
-        }
+    background: #fff;
 
+    border: 1px solid #aaa;
+}
 
-        .result-header h2 {
+.print-settings label {
 
-            margin-bottom: 5px;
+    display: inline-block;
 
-            font-weight: 600;
-        }
+    margin-right: 10px;
 
+    margin-bottom: 5px;
+}
 
-        .selection-info {
+.print-settings input {
 
-            color: #6c757d;
+    width: 65px;
 
-            font-size: 15px;
-        }
+    padding: 3px;
+}
 
+.print-settings button {
 
-        .summary-card {
+    padding: 5px 12px;
 
-            border: none;
+    cursor: pointer;
+}
 
-            box-shadow:
-                0 2px 8px
-                rgba(0,0,0,0.08);
-        }
 
+/* ============================================================
+   PAGE CONTAINER
+   ============================================================ */
 
-        .summary-number {
+.page {
 
-            font-size: 28px;
+    width: 100%;
 
-            font-weight: bold;
-        }
+    background: #fff;
 
+    margin: 10px auto;
 
-        .student-card {
+    padding: 0;
 
-            background: white;
+    page-break-after: always;
+}
 
-            border-radius: 8px;
 
-            margin-bottom: 25px;
+/* ============================================================
+   HPC CARD
+   ============================================================ */
 
-            box-shadow:
-                0 2px 10px
-                rgba(0,0,0,0.08);
+.hpc-card {
 
-            overflow: hidden;
-        }
+    width: 100%;
 
+    border: 1px solid #000;
 
-        .student-header {
+    padding: 3px;
 
-            padding: 18px;
+    background: #fff;
+}
 
-            background: #343a40;
 
-            color: white;
-        }
+/* ============================================================
+   HEADER
+   ============================================================ */
 
+.school-header {
 
-        .student-name {
+    text-align: center;
 
-            font-size: 20px;
+    font-weight: bold;
 
-            font-weight: 600;
-        }
+    line-height: 1.05;
 
+    margin-bottom: 2px;
+}
 
-        .student-info {
+.school-name {
 
-            font-size: 14px;
+    font-size:
+        <?= $font_size + 3; ?>pt;
+}
 
-            margin-top: 5px;
-        }
+.school-city {
 
+    font-size:
+        <?= $font_size + 1; ?>pt;
+}
 
-        .student-body {
+.hpc-title {
 
-            padding: 20px;
-        }
+    font-size:
+        <?= $font_size + 2; ?>pt;
 
+    font-weight: bold;
 
-        .marks-table th {
+    text-align: center;
 
-            background: #f1f3f5;
+    margin-top: 2px;
+}
 
-            text-align: center;
+.session {
 
-            vertical-align: middle;
-        }
+    text-align: center;
 
+    font-weight: bold;
 
-        .marks-table td {
+    margin-bottom: 3px;
+}
 
-            vertical-align: middle;
 
-            text-align: center;
-        }
+/* ============================================================
+   TABLES
+   ============================================================ */
 
+table {
 
-        .marks-table td:first-child {
+    width: 100%;
 
-            text-align: left;
-        }
+    border-collapse: collapse;
 
+    table-layout: fixed;
 
-        .total-row {
+    margin: 0;
+}
 
-            font-weight: bold;
+td,
+th {
 
-            background: #f8f9fa;
-        }
+    border: 1px solid #000;
 
+    padding:
+        <?= $cell_padding; ?>px;
 
-        .pass-badge {
+    vertical-align: middle;
 
-            background: #28a745;
+    line-height: 1.05;
+}
 
-            color: white;
+th {
 
-            padding: 6px 12px;
+    text-align: center;
 
-            border-radius: 4px;
+    font-weight: bold;
+}
 
-            font-weight: bold;
-        }
 
+/* ============================================================
+   STUDENT DETAILS
+   ============================================================ */
 
-        .fail-badge {
+.student-info td {
 
-            background: #dc3545;
+    width: 25%;
 
-            color: white;
+    text-align: left;
+}
 
-            padding: 6px 12px;
+.label {
 
-            border-radius: 4px;
+    font-weight: bold;
+}
 
-            font-weight: bold;
-        }
 
+/* ============================================================
+   HEIGHT / WEIGHT
+   ============================================================ */
 
-        .grade-badge {
+.term-info td {
 
-            background: #007bff;
+    width: 50%;
 
-            color: white;
+    line-height: 1.25;
+}
 
-            padding: 6px 12px;
 
-            border-radius: 4px;
+/* ============================================================
+   SECTION TITLE
+   ============================================================ */
 
-            font-weight: bold;
-        }
+.section-title {
 
+    border: 1px solid #000;
 
-        .no-data {
+    text-align: center;
 
-            text-align: center;
+    font-weight: bold;
 
-            padding: 50px;
+    padding: 2px;
 
-            background: white;
+    margin-top: 3px;
 
-            border-radius: 8px;
+    line-height: 1.05;
+}
 
-            box-shadow:
-                0 2px 10px
-                rgba(0,0,0,0.08);
-        }
+.sub-title {
 
+    text-align: center;
 
-        @media print {
+    font-weight: bold;
 
-            .no-print {
+    padding: 2px;
 
-                display: none !important;
-            }
+    line-height: 1.05;
+}
 
-            body {
 
-                background: white;
-            }
+/* ============================================================
+   SCHOLASTIC TABLE
+   ============================================================ */
 
-            .page-wrapper {
+.scholastic-table th,
+.scholastic-table td {
 
-                padding: 0;
-            }
+    text-align: center;
 
-            .student-card {
+    font-size:
+        <?= max(6, $font_size - 0.4); ?>pt;
+}
 
-                box-shadow: none;
+.scholastic-table .subject {
 
-                border:
-                    1px solid #ddd;
+    text-align: left;
 
-                page-break-inside: avoid;
-            }
-        }
+    font-weight: bold;
 
-    </style>
+    width: 17%;
+}
+
+.scholastic-table .term-column {
+
+    width: 8.3%;
+}
+
+.subject-code {
+
+    font-size:
+        <?= max(5.5, $font_size - 1); ?>pt;
+
+    font-weight: normal;
+}
+
+
+/* ============================================================
+   SMALL TABLES
+   ============================================================ */
+
+.small-table td,
+.small-table th {
+
+    text-align: center;
+
+    font-size:
+        <?= max(6, $font_size - 0.3); ?>pt;
+}
+
+.small-table .left {
+
+    text-align: left;
+}
+
+
+/* ============================================================
+   OBSERVATION TABLE
+   ============================================================ */
+
+.observation-table td:first-child {
+
+    width: 55%;
+
+    text-align: left;
+
+    font-weight: bold;
+}
+
+.observation-table td:nth-child(2),
+.observation-table td:nth-child(3) {
+
+    width: 22.5%;
+
+    text-align: center;
+}
+
+
+/* ============================================================
+   SIGNATURES
+   ============================================================ */
+
+.signature-table {
+
+    margin-top: 7px;
+}
+
+.signature-table td {
+
+    width: 33.33%;
+
+    text-align: center;
+
+    padding-top: 18px;
+
+    border: none;
+}
+
+
+/* ============================================================
+   RESULT
+   ============================================================ */
+
+.pass {
+
+    font-weight: bold;
+}
+
+.fail {
+
+    font-weight: bold;
+}
+
+
+/* ============================================================
+   NO STUDENT
+   ============================================================ */
+
+.no-student {
+
+    width: 90%;
+
+    margin: 30px auto;
+
+    padding: 25px;
+
+    background: #fff;
+
+    border: 1px solid #aaa;
+
+    text-align: center;
+}
+
+
+/* ============================================================
+   PRINT
+   ============================================================ */
+
+@media print {
+
+    body {
+
+        background: #fff;
+
+        -webkit-print-color-adjust: exact;
+
+        print-color-adjust: exact;
+    }
+
+    .no-print {
+
+        display: none !important;
+    }
+
+    .page {
+
+        margin: 0;
+
+        width: 100%;
+
+        page-break-after: always;
+    }
+
+    .hpc-card {
+
+        border: 1px solid #000;
+    }
+
+    table {
+
+        page-break-inside: avoid;
+    }
+
+    tr {
+
+        page-break-inside: avoid;
+    }
+}
+
+</style>
 
 </head>
 
@@ -742,637 +1255,1652 @@ foreach ($students as $student) {
 <body>
 
 
-<div class="page-wrapper">
-
-
-    <!-- =====================================================
-         HEADER
-         ===================================================== -->
-
-    <div class="result-header">
-
-        <div
-            class="d-flex
-                   justify-content-between
-                   align-items-center"
-        >
-
-            <div>
-
-                <h2>
-
-                    <i class="fas fa-chart-line"></i>
-
-                    CBSE Result Generator
-
-                </h2>
-
-                <div class="selection-info">
-
-                    <strong>
-                        Class:
-                    </strong>
-
-                    <?= e($class_name); ?>
-
-                    &nbsp; | &nbsp;
-
-                    <strong>
-                        Section:
-                    </strong>
-
-                    <?= e($section_name); ?>
-
-                    &nbsp; | &nbsp;
-
-                    <strong>
-                        Examination:
-                    </strong>
-
-                    <?= e($exam_name); ?>
-
-                </div>
-
-            </div>
-
-
-            <div class="no-print">
-
-                <a
-                    href="index.php"
-                    class="btn btn-secondary"
-                >
-
-                    <i class="fas fa-arrow-left"></i>
-
-                    Back
-
-                </a>
-
-
-                <button
-                    type="button"
-                    onclick="window.print()"
-                    class="btn btn-primary"
-                >
-
-                    <i class="fas fa-print"></i>
-
-                    Print
-
-                </button>
-
-            </div>
-
-        </div>
-
-    </div>
-
-
-    <!-- =====================================================
-         SUMMARY
-         ===================================================== -->
-
-    <div class="row mb-4">
-
-
-        <!-- TOTAL STUDENTS -->
-
-        <div class="col-md-4">
-
-            <div class="card summary-card">
-
-                <div class="card-body">
-
-                    <div class="text-muted">
-
-                        Total Students
-
-                    </div>
-
-                    <div class="summary-number">
-
-                        <?= $total_students; ?>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <!-- PASS -->
-
-        <div class="col-md-4">
-
-            <div class="card summary-card">
-
-                <div class="card-body">
-
-                    <div class="text-muted">
-
-                        Pass
-
-                    </div>
-
-                    <div
-                        class="summary-number
-                               text-success"
-                    >
-
-                        <?= $pass_count; ?>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-
-        <!-- FAIL -->
-
-        <div class="col-md-4">
-
-            <div class="card summary-card">
-
-                <div class="card-body">
-
-                    <div class="text-muted">
-
-                        Fail
-
-                    </div>
-
-                    <div
-                        class="summary-number
-                               text-danger"
-                    >
-
-                        <?= $fail_count; ?>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-        </div>
-
-    </div>
-
-
-    <!-- =====================================================
-         STUDENT RESULTS
-         ===================================================== -->
-
-    <?php if (empty($students)): ?>
-
-        <div class="no-data">
-
-            <i
-                class="fas fa-users-slash fa-3x text-muted mb-3"
-            ></i>
-
-            <h4>
-                No Students Found
-            </h4>
-
-            <p class="text-muted">
-
-                No active students were found for:
-
-            </p>
-
-            <strong>
-
-                <?= e($class_name); ?>
-
-                -
-
-                <?= e($section_name); ?>
-
-            </strong>
-
-        </div>
-
-    <?php else: ?>
-
-
-        <?php foreach ($students as $student): ?>
-
-            <div class="student-card">
-
-
-                <!-- STUDENT HEADER -->
-
-                <div class="student-header">
-
-                    <div class="student-name">
-
-                        <?= e(
-                            $student['student_name']
-                        ); ?>
-
-                    </div>
-
-
-                    <div class="student-info">
-
-                        <strong>
-                            Admission No:
-                        </strong>
-
-                        <?= e(
-                            $student['admission_no']
-                        ); ?>
-
-                        &nbsp;&nbsp;
-
-                        <strong>
-                            Roll No:
-                        </strong>
-
-                        <?= e(
-                            $student['roll_no']
-                        ); ?>
-
-                        &nbsp;&nbsp;
-
-                        <strong>
-                            Father:
-                        </strong>
-
-                        <?= e(
-                            $student['father_name']
-                        ); ?>
-
-                    </div>
-
-                </div>
-
-
-                <!-- STUDENT BODY -->
-
-                <div class="student-body">
-
-
-                    <div class="table-responsive">
-
-                        <table
-                            class="table
-                                   table-bordered
-                                   marks-table"
-                        >
-
-                            <thead>
-
-                            <tr>
-
-                                <th>
-                                    Subject
-                                </th>
-
-                                <th>
-                                    Max Marks
-                                </th>
-
-                                <th>
-                                    Obtained
-                                </th>
-
-                                <th>
-                                    Percentage
-                                </th>
-
-                                <th>
-                                    Grade
-                                </th>
-
-                                <th>
-                                    Remarks
-                                </th>
-
-                            </tr>
-
-                            </thead>
-
-
-                            <tbody>
-
-
-                            <?php if (
-                                empty(
-                                    $student['subjects']
-                                )
-                            ): ?>
-
-                                <tr>
-
-                                    <td
-                                        colspan="6"
-                                        class="text-center
-                                               text-muted"
-                                    >
-
-                                        No marks entered for
-                                        this examination.
-
-                                    </td>
-
-                                </tr>
-
-                            <?php else: ?>
-
-
-                                <?php foreach (
-                                    $student['subjects']
-                                    as $subject
-                                ): ?>
-
-
-                                    <?php
-
-                                    $subject_percentage = 0;
-
-                                    if (
-                                        $subject['max_marks'] > 0
-                                    ) {
-
-                                        $subject_percentage =
-                                            (
-                                                $subject['obtained_marks']
-                                                /
-                                                $subject['max_marks']
-                                            ) * 100;
-                                    }
-
-
-                                    if (
-                                        $subject_percentage >= 91
-                                    ) {
-
-                                        $subject_grade = 'A1';
-
-                                    } elseif (
-                                        $subject_percentage >= 81
-                                    ) {
-
-                                        $subject_grade = 'A2';
-
-                                    } elseif (
-                                        $subject_percentage >= 71
-                                    ) {
-
-                                        $subject_grade = 'B1';
-
-                                    } elseif (
-                                        $subject_percentage >= 61
-                                    ) {
-
-                                        $subject_grade = 'B2';
-
-                                    } elseif (
-                                        $subject_percentage >= 51
-                                    ) {
-
-                                        $subject_grade = 'C1';
-
-                                    } elseif (
-                                        $subject_percentage >= 41
-                                    ) {
-
-                                        $subject_grade = 'C2';
-
-                                    } elseif (
-                                        $subject_percentage >= 33
-                                    ) {
-
-                                        $subject_grade = 'D';
-
-                                    } else {
-
-                                        $subject_grade = 'E';
-                                    }
-
-                                    ?>
-
-
-                                    <tr>
-
-                                        <td>
-
-                                            <strong>
-
-                                                <?= e(
-                                                    $subject['subject_name']
-                                                ); ?>
-
-                                            </strong>
-
-
-                                            <?php if (
-                                                !empty(
-                                                    $subject['subject_code']
-                                                )
-                                            ): ?>
-
-                                                <small
-                                                    class="text-muted"
-                                                >
-
-                                                    (
-                                                    <?= e(
-                                                        $subject['subject_code']
-                                                    ); ?>
-                                                    )
-
-                                                </small>
-
-                                            <?php endif; ?>
-
-                                        </td>
-
-
-                                        <td>
-
-                                            <?= number_format(
-                                                $subject['max_marks'],
-                                                2
-                                            ); ?>
-
-                                        </td>
-
-
-                                        <td>
-
-                                            <strong>
-
-                                                <?= number_format(
-                                                    $subject['obtained_marks'],
-                                                    2
-                                                ); ?>
-
-                                            </strong>
-
-                                        </td>
-
-
-                                        <td>
-
-                                            <?= number_format(
-                                                $subject_percentage,
-                                                2
-                                            ); ?>%
-
-                                        </td>
-
-
-                                        <td>
-
-                                            <span
-                                                class="grade-badge"
-                                            >
-
-                                                <?= e(
-                                                    $subject_grade
-                                                ); ?>
-
-                                            </span>
-
-                                        </td>
-
-
-                                        <td>
-
-                                            <?= e(
-                                                $subject['remarks']
-                                            ); ?>
-
-                                        </td>
-
-                                    </tr>
-
-
-                                <?php endforeach; ?>
-
-
-                            <?php endif; ?>
-
-
-                            <!-- TOTAL -->
-
-                            <tr class="total-row">
-
-                                <td>
-                                    TOTAL
-                                </td>
-
-                                <td>
-
-                                    <?= number_format(
-                                        $student['total_max_marks'],
-                                        2
-                                    ); ?>
-
-                                </td>
-
-                                <td>
-
-                                    <?= number_format(
-                                        $student['total_marks'],
-                                        2
-                                    ); ?>
-
-                                </td>
-
-                                <td>
-
-                                    <?= number_format(
-                                        $student['percentage'],
-                                        2
-                                    ); ?>%
-
-                                </td>
-
-                                <td>
-
-                                    <span
-                                        class="grade-badge"
-                                    >
-
-                                        <?= e(
-                                            $student['grade']
-                                        ); ?>
-
-                                    </span>
-
-                                </td>
-
-                                <td>
-
-                                    <?php if (
-                                        $student['result']
-                                        === 'PASS'
-                                    ): ?>
-
-                                        <span
-                                            class="pass-badge"
-                                        >
-
-                                            PASS
-
-                                        </span>
-
-                                    <?php else: ?>
-
-                                        <span
-                                            class="fail-badge"
-                                        >
-
-                                            FAIL
-
-                                        </span>
-
-                                    <?php endif; ?>
-
-                                </td>
-
-                            </tr>
-
-
-                            </tbody>
-
-                        </table>
-
-                    </div>
-
-                </div>
-
-            </div>
-
-
-        <?php endforeach; ?>
-
-
-    <?php endif; ?>
-
+<!-- ==========================================================
+     PRINT SETTINGS
+     ========================================================== -->
+
+<div class="print-settings no-print">
+
+<form method="get">
+
+<input
+    type="hidden"
+    name="class_id"
+    value="<?= $class_id; ?>"
+>
+
+<input
+    type="hidden"
+    name="section_id"
+    value="<?= $section_id; ?>"
+>
+
+<input
+    type="hidden"
+    name="exam_id"
+    value="<?= $exam_id; ?>"
+>
+
+
+<strong>
+HPC PRINT SETTINGS
+</strong>
+
+&nbsp;&nbsp;
+
+
+<label>
+Left:
+<input
+    type="number"
+    name="left_margin"
+    step="0.05"
+    min="0.30"
+    max="2.50"
+    value="<?= h($left_margin); ?>"
+>
+cm
+</label>
+
+
+<label>
+Right:
+<input
+    type="number"
+    name="right_margin"
+    step="0.05"
+    min="0.30"
+    max="2.50"
+    value="<?= h($right_margin); ?>"
+>
+cm
+</label>
+
+
+<label>
+Top:
+<input
+    type="number"
+    name="top_margin"
+    step="0.05"
+    min="0.30"
+    max="2.50"
+    value="<?= h($top_margin); ?>"
+>
+cm
+</label>
+
+
+<label>
+Bottom:
+<input
+    type="number"
+    name="bottom_margin"
+    step="0.05"
+    min="0.30"
+    max="2.50"
+    value="<?= h($bottom_margin); ?>"
+>
+cm
+</label>
+
+
+<label>
+Font:
+<input
+    type="number"
+    name="font_size"
+    step="0.5"
+    min="6"
+    max="12"
+    value="<?= h($font_size); ?>"
+>
+pt
+</label>
+
+
+<label>
+Cell:
+<input
+    type="number"
+    name="cell_padding"
+    step="0.5"
+    min="0"
+    max="5"
+    value="<?= h($cell_padding); ?>"
+>
+px
+</label>
+
+
+<button type="submit">
+Apply Settings
+</button>
+
+
+<button
+    type="button"
+    onclick="window.print()"
+>
+Print HPC
+</button>
+
+</form>
 
 </div>
 
 
-<!-- Bootstrap -->
+<?php if (count($students) === 0): ?>
 
-<script
-    src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js">
-</script>
+<div class="no-student no-print">
 
-<script
-    src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js">
-</script>
+<h2>
+No Students Found
+</h2>
+
+<p>
+No active students were found for:
+</p>
+
+<p>
+
+<strong>
+Class:
+</strong>
+
+<?= h($class_name); ?>
+
+<br>
+
+<strong>
+Section:
+</strong>
+
+<?= h($section_name); ?>
+
+<br>
+
+<strong>
+Examination:
+</strong>
+
+<?= h($exam_name); ?>
+
+</p>
+
+<a
+    href="<?= htmlspecialchars(
+        '/school_erp/modules/students/add.php',
+        ENT_QUOTES,
+        'UTF-8'
+    ); ?>"
+>
+Add First Student
+</a>
+
+</div>
+
+<?php endif; ?>
+
+
+<?php foreach ($students as $student): ?>
+
+
+<?php
+
+/*
+|--------------------------------------------------------------------------
+| STUDENT MARKS
+|--------------------------------------------------------------------------
+*/
+
+$student_id = (int)$student['id'];
+
+$marksForStudent =
+    isset($studentMarks[$student_id])
+    ? $studentMarks[$student_id]
+    : [];
+
+
+/*
+|--------------------------------------------------------------------------
+| TOTALS
+|--------------------------------------------------------------------------
+*/
+
+$term_total = 0;
+
+$term_max = 0;
+
+$subject_rows = [];
+
+
+foreach ($scholasticSubjects as $subject) {
+
+    $subject_id = (int)$subject['id'];
+
+    $mark =
+        isset($marksForStudent[$subject_id])
+        ? $marksForStudent[$subject_id]
+        : null;
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | DEFAULTS
+    |--------------------------------------------------------------------------
+    */
+
+    $pa = null;
+    $se = null;
+    $nb = null;
+    $written = null;
+
+    $obtained = 0;
+
+    $max_marks = 100;
+
+    $remarks = '';
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | READ MARK
+    |--------------------------------------------------------------------------
+    */
+
+    if ($mark) {
+
+        if ($mark['max_marks'] !== null) {
+            $max_marks =
+                (float)$mark['max_marks'];
+        }
+
+        $obtained =
+            (float)$mark['obtained_marks'];
+
+        $remarks =
+            isset($mark['remarks'])
+            ? trim((string)$mark['remarks'])
+            : '';
+
+
+        if ($mark['pa_marks'] !== null) {
+            $pa =
+                (float)$mark['pa_marks'];
+        }
+
+        if ($mark['se_marks'] !== null) {
+            $se =
+                (float)$mark['se_marks'];
+        }
+
+        if ($mark['nb_marks'] !== null) {
+            $nb =
+                (float)$mark['nb_marks'];
+        }
+
+        if ($mark['written_marks'] !== null) {
+            $written =
+                (float)$mark['written_marks'];
+        }
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | COMPONENT TOTAL
+    |--------------------------------------------------------------------------
+    */
+
+    $has_components =
+        (
+            $pa !== null ||
+            $se !== null ||
+            $nb !== null ||
+            $written !== null
+        );
+
+
+    if ($has_components) {
+
+        $display_obtained =
+            (float)($pa ?? 0)
+            +
+            (float)($se ?? 0)
+            +
+            (float)($nb ?? 0)
+            +
+            (float)($written ?? 0);
+
+    } else {
+
+        $display_obtained =
+            $obtained;
+    }
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | PERCENTAGE
+    |--------------------------------------------------------------------------
+    */
+
+    $percentage =
+        $max_marks > 0
+        ? (
+            $display_obtained /
+            $max_marks
+        ) * 100
+        : 0;
+
+
+    $grade =
+        gradeFromPercentage(
+            $percentage
+        );
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | TOTALS
+    |--------------------------------------------------------------------------
+    */
+
+    $term_total +=
+        $display_obtained;
+
+    $term_max +=
+        $max_marks;
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | SAVE DISPLAY ROW
+    |--------------------------------------------------------------------------
+    */
+
+    $subject_rows[] = [
+
+        'subject' =>
+            $subject,
+
+        'pa' =>
+            $pa,
+
+        'se' =>
+            $se,
+
+        'nb' =>
+            $nb,
+
+        'written' =>
+            $written,
+
+        'obtained' =>
+            $display_obtained,
+
+        'max' =>
+            $max_marks,
+
+        'percentage' =>
+            $percentage,
+
+        'grade' =>
+            $grade,
+
+        'remarks' =>
+            $remarks
+    ];
+}
+
+
+$overall_percentage =
+    $term_max > 0
+    ? (
+        $term_total /
+        $term_max
+    ) * 100
+    : 0;
+
+
+$overall_grade =
+    gradeFromPercentage(
+        $overall_percentage
+    );
+
+
+$result_status =
+    resultStatus(
+        $overall_percentage
+    );
+
+?>
+
+
+<!-- ==========================================================
+     ONE A4 PAGE PER STUDENT
+     ========================================================== -->
+
+<div class="page">
+
+<div class="hpc-card">
+
+
+<!-- ==========================================================
+     SCHOOL HEADER
+     ========================================================== -->
+
+<div class="school-header">
+
+<div class="school-name">
+OASIS PUBLIC SCHOOL
+</div>
+
+<div class="school-city">
+MALERKOTLA
+</div>
+
+<div class="hpc-title">
+HOLISTIC PROGRESS CARD
+</div>
+
+<div class="session">
+(<?= h($session_name); ?>)
+</div>
+
+</div>
+
+
+<!-- ==========================================================
+     STUDENT DETAILS
+     ========================================================== -->
+
+<table class="student-info">
+
+<tr>
+
+<td>
+<span class="label">
+Name of Learner :
+</span>
+
+<?= h($student['student_name']); ?>
+
+</td>
+
+
+<td>
+<span class="label">
+Father's Name :
+</span>
+
+<?= h($student['father_name']); ?>
+
+</td>
+
+</tr>
+
+
+<tr>
+
+<td>
+
+<span class="label">
+Class Section :
+</span>
+
+<?= h($class_name); ?>
+
+-
+
+<?= h($section_name); ?>
+
+</td>
+
+
+<td>
+
+<span class="label">
+Admission No. :
+</span>
+
+<?= h($student['admission_no']); ?>
+
+</td>
+
+</tr>
+
+
+<tr>
+
+<td>
+
+<span class="label">
+D.O.B :
+</span>
+
+<?php
+
+if (!empty($student['dob'])) {
+
+    echo h(
+        date(
+            'd-m-Y',
+            strtotime(
+                $student['dob']
+            )
+        )
+    );
+
+}
+
+?>
+
+</td>
+
+
+<td>
+
+<span class="label">
+Class Teacher :
+</span>
+
+________________________
+
+</td>
+
+</tr>
+
+
+<tr>
+
+<td>
+
+<span class="label">
+Roll No. :
+</span>
+
+<?= h($student['roll_no']); ?>
+
+</td>
+
+
+<td>
+
+<span class="label">
+Examination :
+</span>
+
+<?= h($exam_name); ?>
+
+</td>
+
+</tr>
+
+</table>
+
+
+<!-- ==========================================================
+     TERM / HEIGHT / WEIGHT
+     ========================================================== -->
+
+<table class="term-info">
+
+<tr>
+
+<td>
+
+<strong>
+TERM-I
+</strong>
+
+<br>
+
+MY HEIGHT IS:
+________________
+
+&nbsp;&nbsp;
+
+MY WEIGHT IS:
+________________
+
+</td>
+
+
+<td>
+
+<strong>
+TERM-II
+</strong>
+
+<br>
+
+MY HEIGHT IS:
+________________
+
+&nbsp;&nbsp;
+
+MY WEIGHT IS:
+________________
+
+</td>
+
+</tr>
+
+
+<tr>
+
+<td>
+
+<strong>
+ATTENDANCE
+</strong>
+
+<br>
+
+Maximum:
+____________
+
+<br>
+
+TERM-I:
+____________
+
+<br>
+
+Attended:
+____________
+
+</td>
+
+
+<td>
+
+<strong>
+TERM-II
+</strong>
+
+<br>
+
+Maximum:
+____________
+
+<br>
+
+Attended:
+____________
+
+</td>
+
+</tr>
+
+</table>
+
+
+<!-- ==========================================================
+     PART A SCHOLASTIC
+     ========================================================== -->
+
+<div class="section-title">
+
+PART-A SCHOLASTIC AREAS
+
+</div>
+
+
+<div class="sub-title">
+
+Scholastic Summary For The Academic Year
+(<?= h($session_name); ?>)
+
+</div>
+
+
+<table class="scholastic-table">
+
+<thead>
+
+<tr>
+
+<th rowspan="2" class="subject">
+
+Subject
+
+</th>
+
+
+<th colspan="5">
+
+TERM-I
+
+</th>
+
+
+<th colspan="5">
+
+TERM-II
+
+</th>
+
+</tr>
+
+
+<tr>
+
+<th class="term-column">
+P.A.<br>(10)
+</th>
+
+<th class="term-column">
+S.E.<br>(5)
+</th>
+
+<th class="term-column">
+N.B.<br>(5)
+</th>
+
+<th class="term-column">
+Written<br>(80)
+</th>
+
+<th class="term-column">
+TOTAL<br>(100)<br>Grade
+</th>
+
+
+<th class="term-column">
+P.A.<br>(10)
+</th>
+
+<th class="term-column">
+S.E.<br>(5)
+</th>
+
+<th class="term-column">
+N.B.<br>(5)
+</th>
+
+<th class="term-column">
+Written<br>(80)
+</th>
+
+<th class="term-column">
+TOTAL<br>(100)<br>Grade
+</th>
+
+</tr>
+
+</thead>
+
+
+<tbody>
+
+
+<?php foreach ($subject_rows as $row): ?>
+
+
+<tr>
+
+
+<td class="subject">
+
+<?= h(
+    $row['subject']['subject_name']
+); ?>
+
+
+<?php if (!empty(
+    $row['subject']['subject_code']
+)): ?>
+
+<br>
+
+<span class="subject-code">
+
+(
+<?= h(
+    $row['subject']['subject_code']
+); ?>
+)
+
+</span>
+
+<?php endif; ?>
+
+</td>
+
+
+<?php if ($current_term === 'TERM-I'): ?>
+
+
+<!-- TERM-I -->
+
+<td>
+
+<?= $row['pa'] !== null
+    ? cleanNumber($row['pa'])
+    : '—';
+?>
+
+</td>
+
+
+<td>
+
+<?= $row['se'] !== null
+    ? cleanNumber($row['se'])
+    : '—';
+?>
+
+</td>
+
+
+<td>
+
+<?= $row['nb'] !== null
+    ? cleanNumber($row['nb'])
+    : '—';
+?>
+
+</td>
+
+
+<td>
+
+<?php
+
+if ($row['written'] !== null) {
+
+    echo cleanNumber(
+        $row['written']
+    );
+
+} else {
+
+    echo cleanNumber(
+        $row['obtained']
+    );
+
+}
+
+?>
+
+</td>
+
+
+<td>
+
+<?= cleanNumber(
+    $row['obtained']
+); ?>
+
+<br>
+
+<strong>
+
+<?= h(
+    $row['grade']
+); ?>
+
+</strong>
+
+</td>
+
+
+<!-- TERM-II EMPTY -->
+
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+
+
+<?php else: ?>
+
+
+<!-- TERM-I EMPTY -->
+
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+<td>—</td>
+
+
+<!-- TERM-II -->
+
+<td>
+
+<?= $row['pa'] !== null
+    ? cleanNumber($row['pa'])
+    : '—';
+?>
+
+</td>
+
+
+<td>
+
+<?= $row['se'] !== null
+    ? cleanNumber($row['se'])
+    : '—';
+?>
+
+</td>
+
+
+<td>
+
+<?= $row['nb'] !== null
+    ? cleanNumber($row['nb'])
+    : '—';
+?>
+
+</td>
+
+
+<td>
+
+<?php
+
+if ($row['written'] !== null) {
+
+    echo cleanNumber(
+        $row['written']
+    );
+
+} else {
+
+    echo cleanNumber(
+        $row['obtained']
+    );
+
+}
+
+?>
+
+</td>
+
+
+<td>
+
+<?= cleanNumber(
+    $row['obtained']
+); ?>
+
+<br>
+
+<strong>
+
+<?= h(
+    $row['grade']
+); ?>
+
+</strong>
+
+</td>
+
+
+<?php endif; ?>
+
+
+</tr>
+
+
+<?php endforeach; ?>
+
+
+</tbody>
+
+</table>
+
+
+<!-- ==========================================================
+     TOTAL
+     ========================================================== -->
+
+<table class="small-table">
+
+<tr>
+
+<td style="width:55%;">
+
+<strong>
+
+<?= h(
+    $current_term
+); ?>
+
+TOTAL MARKS
+
+</strong>
+
+</td>
+
+
+<td style="width:15%;">
+
+<strong>
+
+<?= cleanNumber(
+    $term_total
+); ?>
+
+/
+
+<?= cleanNumber(
+    $term_max
+); ?>
+
+</strong>
+
+</td>
+
+
+<td style="width:15%;">
+
+<strong>
+
+<?= cleanNumber(
+    $overall_percentage
+); ?>
+
+%
+
+</strong>
+
+</td>
+
+
+<td style="width:15%;">
+
+<strong>
+
+<?= h(
+    $overall_grade
+); ?>
+
+</strong>
+
+</td>
+
+</tr>
+
+</table>
+
+
+<!-- ==========================================================
+     OTHER SUBJECTS
+     ========================================================== -->
+
+<div class="section-title">
+
+OTHER SCHOLASTIC / CO-SCHOLASTIC SUBJECTS
+
+</div>
+
+
+<table class="small-table">
+
+<tr>
+
+
+<?php
+
+/*
+|--------------------------------------------------------------------------
+| REQUIRED DEFAULT OTHER SUBJECTS
+|--------------------------------------------------------------------------
+*/
+
+$requiredOther = [
+
+    'COMPUTER',
+
+    'PHYSICAL EDUCATION',
+
+    'URDU',
+
+    'G.K.'
+];
+
+
+/*
+|--------------------------------------------------------------------------
+| BUILD DISPLAY
+|--------------------------------------------------------------------------
+*/
+
+$otherDisplay = [];
+
+
+foreach ($requiredOther as $requiredName) {
+
+    $found = false;
+
+    foreach ($otherSubjects as $subject) {
+
+        $subjectName =
+            strtoupper(
+                trim(
+                    $subject['subject_name']
+                )
+            );
+
+        if (
+            $subjectName ===
+            strtoupper($requiredName)
+        ) {
+
+            $sid =
+                (int)$subject['id'];
+
+            $mark =
+                isset(
+                    $marksForStudent[$sid]
+                )
+                ? $marksForStudent[$sid]
+                : null;
+
+
+            $grade = '';
+
+
+            if ($mark) {
+
+                $grade =
+                    trim(
+                        (string)(
+                            $mark['remarks']
+                            ?? ''
+                        )
+                    );
+
+
+                if (
+                    $grade === ''
+                ) {
+
+                    $obt =
+                        (float)(
+                            $mark[
+                                'obtained_marks'
+                            ]
+                        );
+
+                    $max =
+                        (float)(
+                            $mark[
+                                'max_marks'
+                            ]
+                        );
+
+                    if ($max > 0) {
+
+                        $grade =
+                            gradeFromPercentage(
+                                (
+                                    $obt /
+                                    $max
+                                ) * 100
+                            );
+                    }
+                }
+            }
+
+
+            $otherDisplay[] = [
+
+                'name' =>
+                    $requiredName,
+
+                'grade' =>
+                    $grade
+            ];
+
+            $found = true;
+
+            break;
+        }
+    }
+
+
+    if (!$found) {
+
+        $otherDisplay[] = [
+
+            'name' =>
+                $requiredName,
+
+            'grade' =>
+                ''
+        ];
+    }
+}
+
+
+foreach ($otherDisplay as $item):
+
+?>
+
+<td>
+
+<strong>
+
+<?= h(
+    $item['name']
+); ?>
+
+</strong>
+
+<br>
+
+<?= h(
+    $item['grade']
+); ?>
+
+</td>
+
+<?php endforeach; ?>
+
+
+</tr>
+
+</table>
+
+
+<!-- ==========================================================
+     LIFE SKILLS
+     ========================================================== -->
+
+<div class="section-title">
+
+LIFE SKILLS
+
+</div>
+
+
+<table class="small-table observation-table">
+
+<tr>
+
+<th>
+Observation
+</th>
+
+<th>
+TERM-I
+</th>
+
+<th>
+TERM-II
+</th>
+
+</tr>
+
+
+<?php foreach ($lifeSkills as $item): ?>
+
+<tr>
+
+<td>
+
+<?= h($item); ?>
+
+</td>
+
+<td>
+
+<?= h(
+    $default_observation
+); ?>
+
+</td>
+
+<td>
+
+<?= h(
+    $default_observation
+); ?>
+
+</td>
+
+</tr>
+
+<?php endforeach; ?>
+
+
+</table>
+
+
+<!-- ==========================================================
+     SEL
+     ========================================================== -->
+
+<div class="section-title">
+
+SOCIAL EMOTIONAL &amp; ETHICAL LEARNING
+
+</div>
+
+
+<table class="small-table observation-table">
+
+<tr>
+
+<th>
+Observation
+</th>
+
+<th>
+TERM-I
+</th>
+
+<th>
+TERM-II
+</th>
+
+</tr>
+
+
+<?php foreach ($sel as $item): ?>
+
+<tr>
+
+<td>
+
+<?= h($item); ?>
+
+</td>
+
+<td>
+
+<?= h(
+    $default_observation
+); ?>
+
+</td>
+
+<td>
+
+<?= h(
+    $default_observation
+); ?>
+
+</td>
+
+</tr>
+
+<?php endforeach; ?>
+
+
+</table>
+
+
+<!-- ==========================================================
+     POSITIVE LEARNING HABITS
+     ========================================================== -->
+
+<div class="section-title">
+
+POSITIVE LEARNING HABITS
+
+</div>
+
+
+<table class="small-table observation-table">
+
+<tr>
+
+<th>
+Observation
+</th>
+
+<th>
+TERM-I
+</th>
+
+<th>
+TERM-II
+</th>
+
+</tr>
+
+
+<?php foreach ($positiveHabits as $item): ?>
+
+<tr>
+
+<td>
+
+<?= h($item); ?>
+
+</td>
+
+<td>
+
+<?= h(
+    $default_observation
+); ?>
+
+</td>
+
+<td>
+
+<?= h(
+    $default_observation
+); ?>
+
+</td>
+
+</tr>
+
+<?php endforeach; ?>
+
+
+</table>
+
+
+<!-- ==========================================================
+     CO-CURRICULAR
+     ========================================================== -->
+
+<div class="section-title">
+
+CO-CURRICULAR ACTIVITIES
+
+</div>
+
+
+<table class="small-table observation-table">
+
+<tr>
+
+<th>
+Observation
+</th>
+
+<th>
+TERM-I
+</th>
+
+<th>
+TERM-II
+</th>
+
+</tr>
+
+
+<?php foreach ($coCurricular as $item): ?>
+
+<tr>
+
+<td>
+
+<?= h($item); ?>
+
+</td>
+
+<td>
+
+<?= h(
+    $default_observation
+); ?>
+
+</td>
+
+<td>
+
+<?= h(
+    $default_observation
+); ?>
+
+</td>
+
+</tr>
+
+<?php endforeach; ?>
+
+
+</table>
+
+
+<!-- ==========================================================
+     FINAL RESULT
+     ========================================================== -->
+
+<table class="small-table">
+
+<tr>
+
+<td style="width:35%;">
+
+<strong>
+Overall Percentage
+</strong>
+
+</td>
+
+
+<td style="width:20%;">
+
+<?= cleanNumber(
+    $overall_percentage
+); ?>
+
+%
+
+</td>
+
+
+<td style="width:20%;">
+
+<strong>
+Grade
+</strong>
+
+</td>
+
+
+<td style="width:25%;">
+
+<strong>
+
+<?= h(
+    $overall_grade
+); ?>
+
+</strong>
+
+</td>
+
+</tr>
+
+
+<tr>
+
+<td>
+
+<strong>
+Result
+</strong>
+
+</td>
+
+
+<td colspan="3">
+
+<strong class="<?= $result_status === 'PASS'
+    ? 'pass'
+    : 'fail';
+?>">
+
+<?= h(
+    $result_status
+); ?>
+
+</strong>
+
+</td>
+
+</tr>
+
+</table>
+
+
+<!-- ==========================================================
+     SIGNATURES
+     ========================================================== -->
+
+<table class="signature-table">
+
+<tr>
+
+<td>
+
+____________________
+
+<br>
+
+Teacher Sign
+
+</td>
+
+
+<td>
+
+____________________
+
+<br>
+
+Examination Sign
+
+</td>
+
+
+<td>
+
+____________________
+
+<br>
+
+Principal Sign
+
+</td>
+
+</tr>
+
+</table>
+
+
+</div>
+
+</div>
+
+
+<?php endforeach; ?>
 
 
 </body>
