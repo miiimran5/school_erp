@@ -47,6 +47,8 @@ if (isset($_POST['login'])) {
 
 <title>Oasis Public School ERP - Login</title>
 
+<link rel="stylesheet" href="assets/css/app.css">
+
 <style>
 
 *{
@@ -56,24 +58,31 @@ if (isset($_POST['login'])) {
 }
 
 body{
-
-    font-family:Arial, Helvetica, sans-serif;
-    background:#f4f6f9;
+    min-height:100vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:24px;
+    background:
+        radial-gradient(circle at 15% 15%, rgba(37,99,235,.22), transparent 32%),
+        radial-gradient(circle at 85% 85%, rgba(20,184,166,.18), transparent 32%),
+        #eef3fb;
 }
 
 .login-box{
 
     width:380px;
 
-    margin:100px auto;
+    margin:0 auto;
 
     background:#ffffff;
 
-    padding:30px;
+    padding:42px 36px 32px;
 
-    border-radius:8px;
+    border-radius:18px;
 
-    box-shadow:0 0 15px rgba(0,0,0,.15);
+    box-shadow:0 18px 55px rgba(15,23,42,.14);
+    border:1px solid rgba(255,255,255,.85);
 
 }
 
@@ -83,7 +92,19 @@ h2{
 
     margin-bottom:20px;
 
-    color:#007bff;
+    color:#172033;
+    font-size:25px;
+
+}
+
+.login-box h2::before {
+    content:"";
+    display:block;
+    width:48px;
+    height:6px;
+    margin:0 auto 15px;
+    border-radius:99px;
+    background:linear-gradient(90deg,#2563eb,#14b8a6);
 
 }
 
@@ -95,9 +116,8 @@ input{
 
     margin-top:12px;
 
-    border:1px solid #ccc;
-
-    border-radius:5px;
+    border:1px solid #d8e0ec;
+    border-radius:9px;
 
     font-size:15px;
 
@@ -107,33 +127,37 @@ button{
 
     width:100%;
 
-    padding:12px;
+    padding:13px 14px;
 
     margin-top:20px;
 
-    background:#007bff;
+    background:linear-gradient(90deg,#2563eb,#1d4ed8);
 
     color:#fff;
 
     border:none;
 
-    border-radius:5px;
+    border-radius:9px;
 
     cursor:pointer;
 
     font-size:16px;
+    font-weight:600;
 
 }
 
 button:hover{
 
-    background:#0056b3;
+    background:#1d4ed8;
 
 }
 
 .error{
 
-    color:red;
+    color:#b91c1c;
+    background:#fef2f2;
+    border-radius:8px;
+    padding:10px;
 
     text-align:center;
 

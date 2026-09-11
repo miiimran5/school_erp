@@ -24,9 +24,15 @@
  */
 
 require_once '../../config/database.php';
+require_once '../../config/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit;
 }
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
@@ -896,6 +902,8 @@ if (!empty($student['photo'])) {
     <?= e($student['student_name']); ?>
 </title>
 
+<link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
+
 
 <style>
 
@@ -1461,7 +1469,7 @@ body {
 <div class="toolbar">
 
     <a
-        href="generate.php?class_id=<?= $class_id; ?>&section_id=<?= $section_id; ?>"
+        href="hpc_report_selector.php"
         class="btn-back"
     >
         ← Back

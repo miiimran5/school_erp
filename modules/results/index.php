@@ -8,9 +8,15 @@
  */
 
 require_once '../../config/database.php';
+require_once '../../config/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit;
 }
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
@@ -103,6 +109,8 @@ if ($exam_query) {
         rel="stylesheet"
         href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
     >
+
+    <link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
 
     <style>
 
@@ -364,6 +372,19 @@ if ($exam_query) {
 
                 </div>
 
+                <div class="form-group">
+                    <label for="result_scope" class="form-label">
+                        <span class="step-number">4</span>
+                        Result to Show Parents
+                    </label>
+                    <select name="result_scope" id="result_scope" class="form-control form-control-lg" required>
+                        <option value="term1">Term-1 only (PA-1, PA-2 and Term-1)</option>
+                        <option value="both">Both Term-1 and Term-2</option>
+                    </select>
+                    <small class="form-text text-muted">
+                        Keep Term-1 only until Term-2 marks are complete. This prevents incomplete Term-2 marks appearing as zero.
+                    </small>
+                </div>
 
                 <!-- BUTTON -->
 

@@ -1,0 +1,2 @@
+admission_no,admission_date,roll_no,class_name,section_name,student_name,gender,dob,blood_group,category,father_name,father_occupation,father_mobile,mother_name,mother_occupation,mother_mobile,guardian_name,guardian_mobile,alternate_mobile,address,city,district,state,pincode,house,transport,game,concession,medical_information,status
+ADM-001,2026-04-01,1,I,1,Example Student,Male,2015-01-01,,General,,,,,,,,,,,,,,,,,,0.00,,1

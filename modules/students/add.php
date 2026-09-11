@@ -430,6 +430,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     Add Student - Oasis Public School ERP
 </title>
 
+<link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
+
 
 <!-- Bootstrap -->
 
@@ -557,6 +559,14 @@ body {
 
 
     <div>
+
+        <a
+            href="<?= BASE_URL; ?>/modules/students/import.php"
+            class="btn btn-success mr-2"
+        >
+            <i class="fas fa-file-upload"></i>
+            Import CSV
+        </a>
 
         <a
             href="<?= BASE_URL; ?>/modules/students/index.php"

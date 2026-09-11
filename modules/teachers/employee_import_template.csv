@@ -1,0 +1,2 @@
+employee_code,full_name,role,gender,date_of_birth,mobile,email,designation,department,qualification,joining_date,address,status
+EMP-001,Example Employee,Teacher,Female,,9876543210,employee@example.com,PGT,Teaching,B.Ed,,,1

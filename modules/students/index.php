@@ -271,6 +271,8 @@ $total_students = count($students);
     href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
 >
 
+<link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
+
 
 <style>
 
@@ -412,6 +414,14 @@ body {
 
 
     <div>
+
+        <a
+            href="<?= BASE_URL; ?>/modules/students/import.php"
+            class="btn btn-success mr-2"
+        >
+            <i class="fas fa-file-upload"></i>
+            Import CSV
+        </a>
 
         <a
             href="<?= BASE_URL; ?>/modules/students/add.php"

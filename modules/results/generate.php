@@ -24,6 +24,13 @@
 
 session_start();
 
+require_once __DIR__ . '/../../config/config.php';
+
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit;
+}
+
 /*
 |--------------------------------------------------------------------------
 | DATABASE CONNECTION
@@ -56,6 +63,9 @@ $conn->set_charset("utf8mb4");
 $class_id   = isset($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
 $section_id = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
 $exam_id    = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
+$result_scope = isset($_GET['result_scope']) && $_GET['result_scope'] === 'both'
+    ? 'both'
+    : 'term1';
 
 if ($class_id <= 0 || $section_id <= 0 || $exam_id <= 0) {
     die("Invalid Class, Section or Examination.");
@@ -414,6 +424,8 @@ if (
 ) {
     $current_term = 'TERM-II';
 }
+
+$show_term2 = ($result_scope === 'both');
 
 
 /*
@@ -799,6 +811,8 @@ HOLISTIC PROGRESS CARD -
     content="width=device-width, initial-scale=1"
 >
 
+<link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
+
 <style>
 
 /* ============================================================
@@ -1140,9 +1154,36 @@ th {
 .observation-table td:nth-child(2),
 .observation-table td:nth-child(3) {
 
-    width: 22.5%;
+    width: 45%;
 
     text-align: center;
+}
+
+.observation-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 7px;
+    margin-top: 7px;
+}
+
+.observation-panel .section-title {
+    margin-top: 0;
+}
+
+.observation-panel .small-table {
+    margin-top: 4px;
+}
+
+@media screen and (max-width: 720px) {
+    .observation-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media print {
+    .observation-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 
@@ -1281,6 +1322,11 @@ th {
     value="<?= $exam_id; ?>"
 >
 
+<input
+    type="hidden"
+    name="result_scope"
+    value="<?= h($result_scope); ?>"
+>
 
 <strong>
 HPC PRINT SETTINGS
@@ -1868,6 +1914,7 @@ ________________
 </td>
 
 
+<?php if ($show_term2): ?>
 <td>
 
 <strong>
@@ -1885,6 +1932,7 @@ MY WEIGHT IS:
 ________________
 
 </td>
+<?php endif; ?>
 
 </tr>
 
@@ -1915,6 +1963,7 @@ ____________
 </td>
 
 
+<?php if ($show_term2): ?>
 <td>
 
 <strong>
@@ -1932,6 +1981,7 @@ Attended:
 ____________
 
 </td>
+<?php endif; ?>
 
 </tr>
 
@@ -1977,11 +2027,9 @@ TERM-I
 </th>
 
 
-<th colspan="5">
-
-TERM-II
-
-</th>
+<?php if ($show_term2): ?>
+<th colspan="5">TERM-II</th>
+<?php endif; ?>
 
 </tr>
 
@@ -2009,7 +2057,7 @@ TOTAL<br>(100)<br>Grade
 </th>
 
 
-<th class="term-column">
+<?php if ($show_term2): ?><th class="term-column">
 P.A.<br>(10)
 </th>
 
@@ -2028,6 +2076,8 @@ Written<br>(80)
 <th class="term-column">
 TOTAL<br>(100)<br>Grade
 </th>
+
+<?php endif; ?>
 
 </tr>
 
@@ -2049,24 +2099,6 @@ TOTAL<br>(100)<br>Grade
     $row['subject']['subject_name']
 ); ?>
 
-
-<?php if (!empty(
-    $row['subject']['subject_code']
-)): ?>
-
-<br>
-
-<span class="subject-code">
-
-(
-<?= h(
-    $row['subject']['subject_code']
-); ?>
-)
-
-</span>
-
-<?php endif; ?>
 
 </td>
 
@@ -2148,25 +2180,16 @@ if ($row['written'] !== null) {
 </td>
 
 
-<!-- TERM-II EMPTY -->
-
-<td>—</td>
-<td>—</td>
-<td>—</td>
-<td>—</td>
-<td>—</td>
+<?php if ($show_term2): ?>
+<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+<?php endif; ?>
 
 
 <?php else: ?>
 
 
-<!-- TERM-I EMPTY -->
-
-<td>—</td>
-<td>—</td>
-<td>—</td>
-<td>—</td>
-<td>—</td>
+<?php if ($show_term2): ?>
+<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
 
 
 <!-- TERM-II -->
@@ -2242,6 +2265,8 @@ if ($row['written'] !== null) {
 
 </td>
 
+
+<?php endif; ?>
 
 <?php endif; ?>
 
@@ -2511,6 +2536,10 @@ foreach ($otherDisplay as $item):
 </table>
 
 
+<div class="observation-grid">
+
+<div class="observation-panel">
+
 <!-- ==========================================================
      LIFE SKILLS
      ========================================================== -->
@@ -2534,9 +2563,11 @@ Observation
 TERM-I
 </th>
 
+<?php if ($show_term2): ?>
 <th>
 TERM-II
 </th>
+<?php endif; ?>
 
 </tr>
 
@@ -2551,13 +2582,9 @@ TERM-II
 
 </td>
 
-<td>
-
-<?= h(
-    $default_observation
-); ?>
-
-</td>
+<?php if ($show_term2): ?>
+<td><?= h($default_observation); ?></td>
+<?php endif; ?>
 
 <td>
 
@@ -2574,6 +2601,9 @@ TERM-II
 
 </table>
 
+</div>
+
+<div class="observation-panel">
 
 <!-- ==========================================================
      SEL
@@ -2598,9 +2628,11 @@ Observation
 TERM-I
 </th>
 
+<?php if ($show_term2): ?>
 <th>
 TERM-II
 </th>
+<?php endif; ?>
 
 </tr>
 
@@ -2615,13 +2647,9 @@ TERM-II
 
 </td>
 
-<td>
-
-<?= h(
-    $default_observation
-); ?>
-
-</td>
+<?php if ($show_term2): ?>
+<td><?= h($default_observation); ?></td>
+<?php endif; ?>
 
 <td>
 
@@ -2638,6 +2666,9 @@ TERM-II
 
 </table>
 
+</div>
+
+<div class="observation-panel">
 
 <!-- ==========================================================
      POSITIVE LEARNING HABITS
@@ -2662,9 +2693,11 @@ Observation
 TERM-I
 </th>
 
+<?php if ($show_term2): ?>
 <th>
 TERM-II
 </th>
+<?php endif; ?>
 
 </tr>
 
@@ -2679,13 +2712,9 @@ TERM-II
 
 </td>
 
-<td>
-
-<?= h(
-    $default_observation
-); ?>
-
-</td>
+<?php if ($show_term2): ?>
+<td><?= h($default_observation); ?></td>
+<?php endif; ?>
 
 <td>
 
@@ -2702,6 +2731,9 @@ TERM-II
 
 </table>
 
+</div>
+
+<div class="observation-panel">
 
 <!-- ==========================================================
      CO-CURRICULAR
@@ -2726,9 +2758,11 @@ Observation
 TERM-I
 </th>
 
+<?php if ($show_term2): ?>
 <th>
 TERM-II
 </th>
+<?php endif; ?>
 
 </tr>
 
@@ -2743,13 +2777,9 @@ TERM-II
 
 </td>
 
-<td>
-
-<?= h(
-    $default_observation
-); ?>
-
-</td>
+<?php if ($show_term2): ?>
+<td><?= h($default_observation); ?></td>
+<?php endif; ?>
 
 <td>
 
@@ -2766,6 +2796,9 @@ TERM-II
 
 </table>
 
+</div>
+
+</div>
 
 <!-- ==========================================================
      FINAL RESULT

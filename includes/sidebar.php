@@ -107,7 +107,7 @@
                         <i class="nav-icon fas fa-chalkboard-teacher"></i>
 
                         <p>
-                            Teachers
+                            Employees
                         </p>
 
                     </a>
@@ -205,6 +205,20 @@
 
                         </li>
 
+                        <li class="nav-item">
+                            <a href="<?= BASE_URL; ?>/modules/exams/types.php" class="nav-link">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Exam Types</p>
+                            </a>
+                        </li>
+
+                        <li class="nav-item">
+                            <a href="<?= BASE_URL; ?>/modules/exams/subjects.php" class="nav-link">
+                                <i class="far fa-circle nav-icon"></i>
+                                <p>Subjects</p>
+                            </a>
+                        </li>
+
 
                         <!-- Import Marks -->
 
@@ -231,7 +245,7 @@
                         <li class="nav-item">
 
                             <a
-                                href="<?= BASE_URL; ?>/modules/results/generate.php"
+                                href="<?= BASE_URL; ?>/modules/results/index.php"
                                 class="nav-link"
                             >
 
@@ -251,7 +265,7 @@
                         <li class="nav-item">
 
                             <a
-                                href="<?= BASE_URL; ?>/modules/results/hpc_report.php"
+                                href="<?= BASE_URL; ?>/modules/results/hpc_report_selector.php"
                                 class="nav-link"
                             >
 

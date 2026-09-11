@@ -14,8 +14,10 @@ require_once __DIR__ . '/../config/config.php';
 
 <link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/adminlte.min.css">
 
+<link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
+
 </head>
 
-<body class="hold-transition sidebar-mini layout-fixed">
+<body class="hold-transition sidebar-mini layout-fixed app-body">
 
 <div class="wrapper">

@@ -9,9 +9,15 @@
  */
 
 require_once '../../config/database.php';
+require_once '../../config/config.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
+}
+
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit;
 }
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
@@ -452,6 +458,8 @@ if (!empty($student['photo'])) {
     <title>
         Report Card - <?= e($student['student_name']); ?>
     </title>
+
+    <link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
 
 
     <style>
@@ -1249,24 +1257,6 @@ if (!empty($student['photo'])) {
 
                         </strong>
 
-
-                        <?php if (
-                            !empty(
-                                $mark['subject_code']
-                            )
-                        ): ?>
-
-                            <br>
-
-                            <small>
-
-                                <?= e(
-                                    $mark['subject_code']
-                                ); ?>
-
-                            </small>
-
-                        <?php endif; ?>
 
                     </td>
 

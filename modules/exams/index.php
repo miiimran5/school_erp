@@ -3,13 +3,23 @@ session_start();
 require_once '../../config/database.php';
 require_once '../../config/config.php';
 
+if (!isset($_SESSION['user_id'])) {
+    header('Location: ../../login.php');
+    exit;
+}
+
 include '../../includes/header.php';
 include '../../includes/navbar.php';
 include '../../includes/sidebar.php';
 
 $classes  = mysqli_query($conn,"SELECT * FROM classes WHERE status=1 ORDER BY class_order");
 $sections = mysqli_query($conn,"SELECT * FROM sections WHERE status=1 ORDER BY section_name");
-$exams    = mysqli_query($conn,"SELECT * FROM exams WHERE status=1 ORDER BY start_date DESC");
+$exams    = mysqli_query($conn,"SELECT e.id, e.exam_name, et.max_marks FROM exams e LEFT JOIN exam_types et ON et.id=e.exam_type_id WHERE e.status=1 ORDER BY e.start_date DESC, e.id DESC");
+$selected_class = isset($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
+$selected_section = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
+$selected_exam = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
+$selected_subject = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
+$max_marks = 100;
 ?>
 
 <div class="content-wrapper">
@@ -39,6 +49,8 @@ $exams    = mysqli_query($conn,"SELECT * FROM exams WHERE status=1 ORDER BY star
 
 <div class="card-header bg-primary text-white">
 Select Examination
+<a href="types.php" class="btn btn-light btn-sm float-right"><i class="fas fa-list-alt"></i> Manage Exam Types</a>
+<a href="subjects.php" class="btn btn-light btn-sm float-right mr-2"><i class="fas fa-book"></i> Manage Subjects</a>
 </div>
 
 <div class="card-body">
@@ -91,25 +103,21 @@ Select Examination
 <option value="">Select</option>
 
 <?php
-if(isset($_GET['class_id'])){
+$subjects = mysqli_query($conn, "
+SELECT id, subject_name
+FROM subjects
+WHERE status = 1
+ORDER BY subject_name
+");
 
-$class=(int)$_GET['class_id'];
-
-$subjects=mysqli_query($conn,"
-SELECT s.id,s.subject_name
-FROM class_subjects cs
-JOIN subjects s ON cs.subject_id=s.id
-WHERE cs.class_id='$class'
-ORDER BY s.subject_name");
-
-while($sub=mysqli_fetch_assoc($subjects)){
+while($subjects && $sub=mysqli_fetch_assoc($subjects)){
 ?>
 
 <option value="<?= $sub['id']; ?>" <?= (isset($_GET['subject_id']) && $_GET['subject_id']==$sub['id'])?'selected':''; ?>>
 <?= $sub['subject_name']; ?>
 </option>
 
-<?php } } ?>
+<?php } ?>
 
 </select>
 
@@ -125,18 +133,33 @@ Load Students
 
 </form>
 
+<?php if (isset($_GET['error'])): ?>
+<div class="alert alert-danger mt-3">
+    Unable to save marks. Please select a valid class, section, subject, and examination, then try again.
+</div>
+<?php endif; ?>
+
 </div>
 
 </div>
 
 <?php
 
-if(isset($_GET['class_id']) && isset($_GET['section_id']) && isset($_GET['subject_id']) && isset($_GET['exam_id'])){
+if($selected_class > 0 && $selected_section > 0 && $selected_subject > 0 && $selected_exam > 0){
 
-$class=(int)$_GET['class_id'];
-$section=(int)$_GET['section_id'];
-$subject=(int)$_GET['subject_id'];
-$exam=(int)$_GET['exam_id'];
+$class=$selected_class;
+$section=$selected_section;
+$subject=$selected_subject;
+$exam=$selected_exam;
+
+$exam_stmt = $conn->prepare("SELECT COALESCE(et.max_marks, 100) AS max_marks FROM exams e LEFT JOIN exam_types et ON et.id=e.exam_type_id WHERE e.id=? AND e.status=1 LIMIT 1");
+if ($exam_stmt) {
+    $exam_stmt->bind_param("i", $exam);
+    $exam_stmt->execute();
+    $exam_row = $exam_stmt->get_result()->fetch_assoc();
+    $max_marks = $exam_row ? max(1, (int)$exam_row['max_marks']) : 100;
+    $exam_stmt->close();
+}
 
 $students=mysqli_query($conn,"
 SELECT *
@@ -192,10 +215,10 @@ Enter Marks
 type="number"
 step="0.5"
 min="0"
-max="100"
+max="<?= $max_marks; ?>"
 name="marks[<?= $stu['id']; ?>]"
 class="form-control"
-placeholder="0-100">
+placeholder="0-<?= $max_marks; ?>">
 
 </td>
 

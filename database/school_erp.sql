@@ -24,6 +24,57 @@ SET time_zone = "+00:00";
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `teachers`
+--
+
+CREATE TABLE `teachers` (
+  `id` int(11) NOT NULL,
+  `employee_code` varchar(50) NOT NULL,
+  `full_name` varchar(120) NOT NULL,
+  `role` varchar(100) DEFAULT NULL,
+  `gender` enum('Male','Female','Other') DEFAULT NULL,
+  `date_of_birth` date DEFAULT NULL,
+  `mobile` varchar(20) DEFAULT NULL,
+  `email` varchar(120) DEFAULT NULL,
+  `designation` varchar(100) DEFAULT NULL,
+  `department` varchar(100) DEFAULT NULL,
+  `qualification` varchar(255) DEFAULT NULL,
+  `joining_date` date DEFAULT NULL,
+  `address` text DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `exam_types`
+--
+
+CREATE TABLE `exam_types` (
+  `id` int(11) NOT NULL,
+  `exam_type_name` varchar(100) NOT NULL,
+  `max_marks` int(11) DEFAULT 100,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `exam_types`
+--
+
+INSERT INTO `exam_types` (`id`, `exam_type_name`, `max_marks`, `status`, `created_at`) VALUES
+(1, 'PA-1', 20, 1, CURRENT_TIMESTAMP),
+(2, 'PA-2', 20, 1, CURRENT_TIMESTAMP),
+(3, 'PA-3', 20, 1, CURRENT_TIMESTAMP),
+(4, 'PA-4', 20, 1, CURRENT_TIMESTAMP),
+(5, 'Term-1', 100, 1, CURRENT_TIMESTAMP),
+(6, 'Term-2', 100, 1, CURRENT_TIMESTAMP);
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `categories`
 --
 
@@ -237,6 +288,50 @@ INSERT INTO `sections` (`id`, `section_name`, `status`, `created_at`) VALUES
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `students`
+-- The application relies on this table; older dumps omitted it.
+--
+
+CREATE TABLE `students` (
+  `id` int(11) NOT NULL,
+  `admission_no` varchar(50) NOT NULL,
+  `admission_date` date NOT NULL,
+  `class_id` int(11) NOT NULL,
+  `section_id` int(11) NOT NULL,
+  `house_id` int(11) DEFAULT NULL,
+  `roll_no` varchar(20) DEFAULT NULL,
+  `student_name` varchar(100) NOT NULL,
+  `gender` varchar(20) NOT NULL,
+  `dob` date NOT NULL,
+  `blood_group` varchar(10) DEFAULT NULL,
+  `category` varchar(50) DEFAULT NULL,
+  `father_name` varchar(100) DEFAULT NULL,
+  `father_occupation` varchar(100) DEFAULT NULL,
+  `father_mobile` varchar(15) DEFAULT NULL,
+  `mother_name` varchar(100) DEFAULT NULL,
+  `mother_occupation` varchar(100) DEFAULT NULL,
+  `mother_mobile` varchar(15) DEFAULT NULL,
+  `guardian_name` varchar(100) DEFAULT NULL,
+  `guardian_mobile` varchar(15) DEFAULT NULL,
+  `alternate_mobile` varchar(15) DEFAULT NULL,
+  `address` text DEFAULT NULL,
+  `city` varchar(100) DEFAULT NULL,
+  `district` varchar(100) DEFAULT NULL,
+  `state` varchar(100) DEFAULT NULL,
+  `pincode` varchar(10) DEFAULT NULL,
+  `house` varchar(100) DEFAULT NULL,
+  `transport` varchar(100) DEFAULT NULL,
+  `game` varchar(100) DEFAULT NULL,
+  `concession` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `medical_information` text DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `transport_routes`
 --
 
@@ -266,6 +361,21 @@ CREATE TABLE `users` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 --
+-- Table structure for table `student_attendance`
+--
+
+CREATE TABLE `student_attendance` (
+  `id` int(11) NOT NULL,
+  `student_id` int(11) NOT NULL,
+  `attendance_date` date NOT NULL,
+  `status` enum('Present','Absent','Late','Half Day','Leave') NOT NULL DEFAULT 'Present',
+  `remarks` varchar(500) DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
 -- Dumping data for table `users`
 --
 
@@ -275,6 +385,21 @@ INSERT INTO `users` (`id`, `role_id`, `full_name`, `username`, `password`, `emai
 --
 -- Indexes for dumped tables
 --
+
+--
+-- Indexes for table `teachers`
+--
+ALTER TABLE `teachers`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_teachers_employee_code` (`employee_code`),
+  ADD KEY `idx_teachers_status_name` (`status`,`full_name`);
+
+--
+-- Indexes for table `exam_types`
+--
+ALTER TABLE `exam_types`
+  ADD PRIMARY KEY (`id`),
+  ADD KEY `idx_exam_types_status` (`status`);
 
 --
 -- Indexes for table `categories`
@@ -326,6 +451,15 @@ ALTER TABLE `sections`
   ADD PRIMARY KEY (`id`);
 
 --
+-- Indexes for table `students`
+--
+ALTER TABLE `students`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `admission_no` (`admission_no`),
+  ADD KEY `idx_students_class_section_status` (`class_id`,`section_id`,`status`),
+  ADD KEY `idx_students_house` (`house_id`);
+
+--
 -- Indexes for table `transport_routes`
 --
 ALTER TABLE `transport_routes`
@@ -340,8 +474,29 @@ ALTER TABLE `users`
   ADD KEY `role_id` (`role_id`);
 
 --
+-- Indexes for table `student_attendance`
+--
+ALTER TABLE `student_attendance`
+  ADD PRIMARY KEY (`id`),
+  ADD UNIQUE KEY `uq_student_attendance_date` (`student_id`,`attendance_date`),
+  ADD KEY `idx_attendance_date_status` (`attendance_date`,`status`),
+  ADD KEY `idx_attendance_created_by` (`created_by`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
+
+--
+-- AUTO_INCREMENT for table `teachers`
+--
+ALTER TABLE `teachers`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `exam_types`
+--
+ALTER TABLE `exam_types`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `categories`
@@ -392,6 +547,12 @@ ALTER TABLE `sections`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
+-- AUTO_INCREMENT for table `students`
+--
+ALTER TABLE `students`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- AUTO_INCREMENT for table `transport_routes`
 --
 ALTER TABLE `transport_routes`
@@ -404,6 +565,12 @@ ALTER TABLE `users`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
+-- AUTO_INCREMENT for table `student_attendance`
+--
+ALTER TABLE `student_attendance`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- Constraints for dumped tables
 --
 
@@ -412,6 +579,13 @@ ALTER TABLE `users`
 --
 ALTER TABLE `users`
   ADD CONSTRAINT `users_ibfk_1` FOREIGN KEY (`role_id`) REFERENCES `roles` (`id`);
+
+--
+-- Constraints for table `student_attendance`
+--
+ALTER TABLE `student_attendance`
+  ADD CONSTRAINT `fk_student_attendance_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON UPDATE CASCADE ON DELETE RESTRICT,
+  ADD CONSTRAINT `fk_student_attendance_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON UPDATE CASCADE ON DELETE SET NULL;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
