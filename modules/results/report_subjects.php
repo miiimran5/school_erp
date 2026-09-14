@@ -1,0 +1,18 @@
+<?php
+require_once '../../config/config.php'; require_once '../../config/database.php'; require_once '../../includes/access.php';
+access_require_roles(array('Admin')); $conn->set_charset('utf8mb4');
+function report_subject_e($v){return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8');}
+$groups=array(
+ 'nursery-ukg'=>'Group 1: Nursery to UKG','class-1-3'=>'Group 2: Class 1 to 3',
+ 'class-4-5'=>'Group 3: Class 4 to 5','class-6-8'=>'Group 4: Class 6 to 8',
+ 'class-9-10'=>'Group 5: Class 9 to 10','class-11-12'=>'Group 6: Class 11 to 12'
+); $active_group=(string)($_GET['group']??'nursery-ukg'); if(!isset($groups[$active_group]))$active_group='nursery-ukg'; $message='';
+if($_SERVER['REQUEST_METHOD']==='POST'){
+ $active_group=(string)($_POST['group_key']??''); $selected=array_map('intval',(array)($_POST['subject_ids']??[]));
+ if(isset($groups[$active_group])){$conn->begin_transaction();$stmt=$conn->prepare('UPDATE report_card_group_subjects SET status=0 WHERE group_key=?');$stmt->bind_param('s',$active_group);$stmt->execute();$insert=$conn->prepare('INSERT INTO report_card_group_subjects (group_key,subject_id,display_order,status) VALUES (?,?,?,1) ON DUPLICATE KEY UPDATE display_order=VALUES(display_order),status=1');foreach($selected as $order=>$subject_id){$insert->bind_param('sii',$active_group,$subject_id,$order);$insert->execute();}$insert->close();$stmt->close();$conn->commit();$message='Report card subjects saved for '.$groups[$active_group].'.';}
+}
+$subjects=array();$q=$conn->query('SELECT id,subject_name,subject_type FROM subjects WHERE status=1 ORDER BY subject_name');while($q&&($x=$q->fetch_assoc()))$subjects[]=$x;
+$selected=array();$stmt=$conn->prepare('SELECT subject_id FROM report_card_group_subjects WHERE group_key=? AND status=1 ORDER BY display_order');$stmt->bind_param('s',$active_group);$stmt->execute();$q=$stmt->get_result();while($x=$q->fetch_assoc())$selected[]=(int)$x['subject_id'];$stmt->close();
+?>
+<?php include '../../includes/header.php';include '../../includes/navbar.php';include '../../includes/sidebar.php';?>
+<div class="content-wrapper"><section class="content-header"><div class="container-fluid"><h1><i class="fas fa-layer-group"></i> Report Card Subjects</h1></div></section><section class="content"><div class="container-fluid"><?php if($message):?><div class="alert alert-success"><?=report_subject_e($message)?></div><?php endif;?><div class="alert alert-info">Choose exactly which subjects appear on each class-group report card. Grading subjects such as GK, Computer, Urdu, and Physical Education can be different for every group.</div><ul class="nav nav-tabs mb-3"><?php foreach($groups as $key=>$label):?><li class="nav-item"><a class="nav-link <?=$key===$active_group?'active':''?>" href="?group=<?=$key?>"><?=report_subject_e($label)?></a></li><?php endforeach;?></ul><form method="post"><input type="hidden" name="group_key" value="<?=report_subject_e($active_group)?>"><div class="card"><div class="card-header bg-primary text-white"><?=report_subject_e($groups[$active_group])?></div><div class="card-body"><div class="row"><?php foreach($subjects as $subject):?><div class="col-md-4 mb-2"><label class="d-block border rounded p-2"><input type="checkbox" name="subject_ids[]" value="<?=$subject['id']?>" <?=in_array((int)$subject['id'],$selected,true)?'checked':''?>> <?=report_subject_e($subject['subject_name'])?> <small class="text-muted">(<?=report_subject_e($subject['subject_type'])?>)</small></label></div><?php endforeach;?></div></div><div class="card-footer"><button class="btn btn-success">Save Group Subjects</button></div></div></form></div></section></div><?php include '../../includes/footer.php';?>

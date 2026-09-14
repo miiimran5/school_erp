@@ -1,32 +1,50 @@
 <?php
-session_start();
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 require_once 'config/database.php';
+require_once 'config/config.php';
+require_once 'includes/school.php';
 
 $message = "";
 
 if (isset($_POST['login'])) {
+    $username = trim((string)($_POST['username'] ?? ''));
+    $password_input = trim((string)($_POST['password'] ?? ''));
+    $password = md5($password_input);
+    $stmt = $conn->prepare('SELECT id, role_id, full_name, username, password, account_type, linked_id FROM users WHERE username=? AND password=? AND status=1 LIMIT 1');
+    $stmt->bind_param('ss', $username, $password);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
 
-    $username = mysqli_real_escape_string($conn, trim($_POST['username']));
-    $password = md5(trim($_POST['password']));
+    /* Default credentials work for records that have not yet been provisioned:
+       students: admission number / DDMMYYYY; teachers: mobile / DDMMYYYY. */
+    if (!$user) {
+        $stmt = $conn->prepare("SELECT s.id, s.admission_no AS username, s.student_name AS full_name, s.dob FROM students s LEFT JOIN users u ON u.account_type='Student' AND u.linked_id=s.id WHERE s.admission_no=? AND s.status=1 AND u.id IS NULL LIMIT 1");
+        $stmt->bind_param('s', $username); $stmt->execute(); $student = $stmt->get_result()->fetch_assoc(); $stmt->close();
+        if ($student && md5($password_input) === md5(date('dmY', strtotime($student['dob'])))) {
+            $user = array('id' => 0, 'role_id' => 7, 'full_name' => $student['full_name'], 'username' => $student['username'], 'account_type' => 'Student', 'linked_id' => $student['id']);
+        }
+    }
+    if (!$user) {
+        $stmt = $conn->prepare("SELECT t.id, t.mobile AS username, t.full_name, t.date_of_birth FROM teachers t LEFT JOIN users u ON u.account_type='Teacher' AND u.linked_id=t.id WHERE t.mobile=? AND t.status=1 AND t.mobile IS NOT NULL AND t.mobile <> '' AND u.id IS NULL LIMIT 1");
+        $stmt->bind_param('s', $username); $stmt->execute(); $teacher = $stmt->get_result()->fetch_assoc(); $stmt->close();
+        if ($teacher && $teacher['date_of_birth'] && md5($password_input) === md5(date('dmY', strtotime($teacher['date_of_birth'])))) {
+            $user = array('id' => 0, 'role_id' => 5, 'full_name' => $teacher['full_name'], 'username' => $teacher['username'], 'account_type' => 'Teacher', 'linked_id' => $teacher['id']);
+        }
+    }
 
-    $sql = "SELECT * FROM users
-            WHERE username='$username'
-            AND password='$password'
-            AND status=1
-            LIMIT 1";
-
-    $result = mysqli_query($conn, $sql);
-
-    if ($result && mysqli_num_rows($result) == 1) {
-
-        $user = mysqli_fetch_assoc($result);
+    if ($user) {
 
         $_SESSION['user_id']   = $user['id'];
         $_SESSION['username']  = $user['username'];
         $_SESSION['full_name'] = $user['full_name'];
         $_SESSION['role_id']   = $user['role_id'];
+        $_SESSION['account_type'] = $user['account_type'] ?? 'Admin';
+        $_SESSION['linked_id'] = $user['linked_id'] ?? null;
 
-        header("Location: modules/dashboard/index.php");
+        header("Location: " . (($user['account_type'] ?? 'Admin') === 'Student' ? 'modules/portal/student.php' : (($user['account_type'] ?? 'Admin') === 'Teacher' ? 'modules/portal/teacher.php' : 'modules/dashboard/index.php')));
         exit;
 
     } else {
@@ -45,7 +63,7 @@ if (isset($_POST['login'])) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Oasis Public School ERP - Login</title>
+<title><?= school_e(school_setting('school_name', APP_NAME)); ?> - Login</title>
 
 <link rel="stylesheet" href="assets/css/app.css">
 
@@ -197,7 +215,7 @@ button:hover{
 
 <div class="login-box">
 
-    <h2>Oasis Public School ERP</h2>
+    <h2><?= school_e(school_setting('school_name', APP_NAME)); ?></h2>
 
     <form method="post" autocomplete="off">
 

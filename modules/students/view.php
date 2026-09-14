@@ -1,53 +1,14 @@
 <?php
-session_start();
-
-// User must be logged in
-if (!isset($_SESSION['user_id'])) {
-    header("Location: ../../login.php");
-    exit;
+require_once '../../config/config.php'; require_once '../../config/database.php'; require_once '../../includes/access.php';
+access_require_roles(array('Admin','Teacher')); $conn->set_charset('utf8mb4');
+function student_view_e($v){return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8');}
+$id=(int)($_GET['id']??0);$stmt=$conn->prepare('SELECT s.*,c.class_name,sec.section_name FROM students s LEFT JOIN classes c ON c.id=s.class_id LEFT JOIN sections sec ON sec.id=s.section_id WHERE s.id=?');$stmt->bind_param('i',$id);$stmt->execute();$student=$stmt->get_result()->fetch_assoc();$stmt->close();if(!$student){http_response_code(404);exit('Student not found.');}
+if(access_is_teacher()&&!access_teacher_can_class($conn,(int)$student['class_id'],(int)$student['section_id'])){http_response_code(403);exit('You can only view assigned students.');}
+$message='';$error='';
+if($_SERVER['REQUEST_METHOD']==='POST'&&access_is_admin()){
+ $login=trim((string)($_POST['login_id']??''));$password=trim((string)($_POST['new_password']??''));
+ if($login==='')$error='Login ID is required.';else{$stmt=$conn->prepare("INSERT INTO users (role_id,account_type,linked_id,full_name,username,password,status) VALUES (7,'Student',?,?,?,COALESCE(NULLIF(?,''),MD5(DATE_FORMAT((SELECT dob FROM students WHERE id=?),'%d%m%Y'))),1) ON DUPLICATE KEY UPDATE username=VALUES(username),password=IF(VALUES(password)='',password,VALUES(password)),full_name=VALUES(full_name),status=1");$stmt->bind_param('isssi',$id,$student['student_name'],$login,$password,$id);if($stmt->execute())$message='Student login details updated.';else$error=$stmt->error;$stmt->close();}
 }
-
-include('../../includes/header.php');
-include('../../includes/navbar.php');
-include('../../includes/sidebar.php');
 ?>
-
-<!-- Content Wrapper -->
-<div class="content-wrapper">
-
-    <!-- Page Header -->
-    <section class="content-header">
-        <div class="container-fluid">
-
-            <h1>Dashboard</h1>
-
-        </div>
-    </section>
-
-    <!-- Main Content -->
-    <section class="content">
-
-        <div class="container-fluid">
-
-            <div class="alert alert-success">
-
-                <h4>
-                    Welcome,
-                    <?php echo $_SESSION['full_name']; ?>
-                </h4>
-
-                <p>
-                    Oasis Public School ERP Dashboard is working successfully.
-                </p>
-
-            </div>
-
-        </div>
-
-    </section>
-
-</div>
-
-<?php
-include('../../includes/footer.php');
-?>
+<?php include '../../includes/header.php';include '../../includes/navbar.php';include '../../includes/sidebar.php';?>
+<div class="content-wrapper"><section class="content-header"><div class="container-fluid"><h1>Student Details</h1></div></section><section class="content"><div class="container-fluid"><?php if($message):?><div class="alert alert-success"><?=student_view_e($message)?></div><?php endif;?><?php if($error):?><div class="alert alert-danger"><?=student_view_e($error)?></div><?php endif;?><div class="card"><div class="card-body"><h3><?=student_view_e($student['student_name'])?></h3><p>Admission No: <?=student_view_e($student['admission_no'])?> | Class: <?=student_view_e($student['class_name'].' / '.$student['section_name'])?></p><p>Gender: <?=student_view_e($student['gender'])?> | DOB: <?=student_view_e($student['dob'])?></p><a class="btn btn-success" href="../results/student_reports.php?student_id=<?=$id?>">View Report Cards</a> <a class="btn btn-warning" href="edit.php?id=<?=$id?>">Edit Profile</a></div></div><?php if(access_is_admin()):?><div class="card"><div class="card-header bg-primary text-white">Login ID and Password</div><div class="card-body"><form method="post" class="row"><div class="form-group col-md-4"><label>Login ID</label><input name="login_id" class="form-control" value="<?=student_view_e($student['admission_no'])?>" required></div><div class="form-group col-md-4"><label>New Password</label><input name="new_password" class="form-control" placeholder="Blank = DOB DDMMYYYY"></div><div class="col-md-4 d-flex align-items-end"><button class="btn btn-success">Save Login Details</button></div></form></div></div><?php endif;?></div></section></div><?php include '../../includes/footer.php';?>

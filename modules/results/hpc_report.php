@@ -409,12 +409,17 @@ $stmt = $conn->prepare("
 
         s.subject_name,
         s.subject_code,
-        s.subject_type
+        s.subject_type,
+        cs.role AS class_subject_role
 
     FROM hpc_scholastic h
 
     INNER JOIN subjects s
         ON s.id = h.subject_id
+    INNER JOIN class_subjects cs
+        ON cs.class_id = ?
+       AND cs.subject_id = h.subject_id
+       AND cs.status = 1
 
     WHERE h.student_id = ?
       AND h.session_id = ?
@@ -424,7 +429,8 @@ $stmt = $conn->prepare("
 ");
 
 $stmt->bind_param(
-    "ii",
+    "iii",
+    $class_id,
     $student_id,
     $session_id
 );
@@ -645,15 +651,21 @@ $subjects = [];
 
 $stmt = $conn->prepare("
     SELECT
-        id,
-        subject_name,
-        subject_code,
-        subject_type
-    FROM subjects
-    WHERE status = 1
-    ORDER BY id ASC
+        s.id,
+        s.subject_name,
+        s.subject_code,
+        s.subject_type,
+        cs.role AS class_subject_role
+    FROM subjects s
+    INNER JOIN class_subjects cs
+        ON cs.subject_id = s.id
+       AND cs.class_id = ?
+       AND cs.status = 1
+    WHERE s.status = 1
+    ORDER BY cs.sort_order, s.id ASC
 ");
 
+$stmt->bind_param("i", $class_id);
 $stmt->execute();
 
 $result = $stmt->get_result();
@@ -670,36 +682,23 @@ $stmt->close();
    SCHOLASTIC SUBJECT LIST
    ============================================================ */
 
-$scholastic_subject_names = [
-
-    'ENGLISH',
-
-    'PUNJABI',
-
-    'HINDI',
-
-    'MATHEMATICS',
-
-    'SCIENCE',
-
-    'SOCIAL SCIENCE'
-];
+$scholastic_subject_names = [];
 
 
 /* ============================================================
    ADDITIONAL SUBJECTS
    ============================================================ */
 
-$additional_subject_names = [
+$additional_subject_names = [];
 
-    'COMPUTER',
-
-    'PHYSICAL EDUCATION',
-
-    'URDU',
-
-    'G.K.'
-];
+foreach ($subjects as $subject) {
+    $subject_name = strtoupper(trim((string)$subject['subject_name']));
+    if (($subject['class_subject_role'] ?? '') === 'Main') {
+        $scholastic_subject_names[] = $subject_name;
+    } else {
+        $additional_subject_names[] = $subject_name;
+    }
+}
 
 
 /* ============================================================

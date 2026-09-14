@@ -130,8 +130,8 @@ if (isset($_GET['download_template'])) {
 /* ---------------------------------------------------------
    CSV Import
 --------------------------------------------------------- */
-$success_message = '';
-$error_message = '';
+$success_message = $success_message ?? '';
+$error_message = $error_message ?? '';
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST'
     && isset($_POST['action'])
@@ -569,6 +569,50 @@ $exam_id = isset($_GET['exam_id'])
 $student_id = isset($_GET['student_id'])
     ? (int)$_GET['student_id']
     : 0;
+
+$session_id = 1;
+$observation_term = (isset($_GET['term']) && $_GET['term'] === 'term2') ? 'term2' : 'term1';
+$observation_values = array();
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_observations') {
+    $post_student_id = (int)($_POST['student_id'] ?? 0);
+    $post_session_id = (int)($_POST['session_id'] ?? 1);
+    $post_term = ($_POST['term'] ?? '') === 'term2' ? 'term2' : 'term1';
+    $posted_observations = isset($_POST['observations']) && is_array($_POST['observations']) ? $_POST['observations'] : array();
+    if ($post_student_id <= 0 || empty($posted_observations)) {
+        $error_message = 'Select a student and enter at least one co-scholastic value.';
+    } else {
+        $column = $post_term === 'term2' ? 'term2_value' : 'term1_value';
+        $conn->begin_transaction();
+        $ok = true;
+        $stmt = $conn->prepare("INSERT INTO hpc_observations (student_id, session_id, category, observation, {$column}) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE {$column}=VALUES({$column})");
+        foreach ($posted_observations as $category => $items) {
+            if (!is_array($items)) continue;
+            foreach ($items as $observation => $value) {
+                $value = strtoupper(trim((string)$value));
+                if ($value !== '' && !in_array($value, array('B', 'PF', 'PG'), true)) { $ok = false; break 2; }
+                $stmt->bind_param('iisss', $post_student_id, $post_session_id, $category, $observation, $value);
+                if (!$stmt->execute()) { $ok = false; break 2; }
+            }
+        }
+        $stmt->close();
+        if ($ok) { $conn->commit(); $success_message = strtoupper($post_term) . ' co-scholastic values saved successfully.'; }
+        else { $conn->rollback(); $error_message = 'Unable to save co-scholastic values.'; }
+        $student_id = $post_student_id;
+        $observation_term = $post_term;
+    }
+}
+
+if ($student_id > 0) {
+    $stmt = $conn->prepare('SELECT category, observation, term1_value, term2_value FROM hpc_observations WHERE student_id=? AND session_id=?');
+    $stmt->bind_param('ii', $student_id, $session_id);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    while ($row = $result->fetch_assoc()) {
+        $observation_values[$row['category']][$row['observation']] = array('term1' => $row['term1_value'], 'term2' => $row['term2_value']);
+    }
+    $stmt->close();
+}
 
 /* ---------------------------------------------------------
    Students
@@ -1683,6 +1727,20 @@ PART-B — Co-Scholastic / Life Skills
 
 </div>
 
+<form method="post" id="observations-form">
+<input type="hidden" name="action" value="save_observations">
+<input type="hidden" name="student_id" value="<?= (int)$student_id ?>">
+<input type="hidden" name="session_id" value="<?= (int)$session_id ?>">
+<div class="row mb-3">
+<div class="col-md-4">
+<label class="form-label">Term</label>
+<select name="term" id="observation-term" class="form-select">
+<option value="term1" <?= $observation_term === 'term1' ? 'selected' : '' ?>>Term-1</option>
+<option value="term2" <?= $observation_term === 'term2' ? 'selected' : '' ?>>Term-2</option>
+</select>
+</div>
+</div>
+
 <div class="alert alert-info">
 
 <strong>Teacher Entry:</strong>
@@ -2002,11 +2060,12 @@ Team Work Collaboration
 
 <div class="small-note">
 
-Co-Scholastic values are currently displayed for teacher entry.
-They can be connected to dedicated database fields once the corresponding
-database structure is finalized.
+Select Term-1 or Term-2, enter the values, and press Save. Each term is stored separately.
 
 </div>
+
+<button type="submit" class="btn btn-primary mt-3"><i class="bi bi-save"></i> Save Selected Term</button>
+</form>
 
 </div>
 
@@ -2019,6 +2078,39 @@ database structure is finalized.
 
 </div>
 
+<script>
+(function () {
+    var form = document.getElementById('observations-form');
+    if (!form) return;
+    var saved = <?= json_encode($observation_values, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP); ?>;
+    form.querySelectorAll('.co-box').forEach(function (box) {
+        var title = box.querySelector('.co-title');
+        var category = title ? title.textContent.trim().replace(/\s+/g, ' ') : '';
+        box.querySelectorAll('.form-label').forEach(function (label) {
+            var selects = label.parentNode.querySelectorAll('select');
+            if (!selects.length || label.textContent.trim() === 'Term') return;
+            var observation = label.textContent.trim().replace(/\s+/g, ' ');
+            selects.forEach(function (select, index) {
+                var term = index === 0 ? 'term1' : 'term2';
+                select.name = 'observations[' + category + '][' + observation + ']';
+                select.setAttribute('data-term', term);
+                var current = saved[category] && saved[category][observation] ? saved[category][observation][term] : '';
+                if (current) select.value = current;
+            });
+        });
+    });
+    function showTerm() {
+        var term = document.getElementById('observation-term').value;
+        form.querySelectorAll('select[data-term]').forEach(function (select) {
+            var visible = select.getAttribute('data-term') === term;
+            select.closest('.col-6').style.display = visible ? '' : 'none';
+            select.disabled = !visible;
+        });
+    }
+    document.getElementById('observation-term').addEventListener('change', showTerm);
+    showTerm();
+}());
+</script>
 
 <script>
 

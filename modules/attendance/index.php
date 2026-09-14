@@ -1,15 +1,13 @@
 <?php
 require_once '../../config/config.php';
 require_once '../../config/database.php';
+require_once '../../includes/access.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ../../login.php');
-    exit;
-}
+access_require_roles(array('Admin', 'Teacher'));
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     die('Database connection failed.');
@@ -40,6 +38,12 @@ $summary = array('Present' => 0, 'Absent' => 0, 'Late' => 0, 'Half Day' => 0, 'L
 if (!attendance_valid_date($selected_date)) {
     $selected_date = date('Y-m-d');
     $error = 'Please choose a valid attendance date.';
+}
+
+if (access_is_teacher() && !access_teacher_can_class($conn, $selected_class, $selected_section)) {
+    $selected_class = 0;
+    $selected_section = 0;
+    $error = 'You can only access attendance for your assigned classes.';
 }
 
 if (empty($_SESSION['attendance_csrf'])) {
@@ -130,7 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $classes = array();
-$class_result = $conn->query("SELECT id, class_name FROM classes WHERE status = 1 ORDER BY class_order, id");
+$class_result = access_is_teacher() ? $conn->query("SELECT DISTINCT c.id, c.class_name FROM classes c LEFT JOIN teachers t ON t.class_incharge_id=c.id LEFT JOIN teacher_class_assignments a ON a.class_id=c.id AND a.teacher_id=" . (int)$_SESSION['linked_id'] . " AND a.status=1 WHERE c.status=1 AND (t.id=" . (int)$_SESSION['linked_id'] . " OR a.id IS NOT NULL) ORDER BY c.class_order, c.id") : $conn->query("SELECT id, class_name FROM classes WHERE status = 1 ORDER BY class_order, id");
 if ($class_result) {
     while ($row = $class_result->fetch_assoc()) {
         $classes[] = $row;

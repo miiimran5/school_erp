@@ -6,7 +6,7 @@
        class="brand-link">
 
         <span class="brand-text font-weight-light">
-            Oasis Public School ERP
+            <?= school_e(school_setting('school_name', APP_NAME)); ?>
         </span>
 
     </a>
@@ -47,13 +47,18 @@
                 role="menu"
                 data-accordion="false"
             >
+                <?php if (function_exists('access_role') && access_role() === 'Student'): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/portal/student.php" class="nav-link"><i class="nav-icon fas fa-home"></i><p>My Student Portal</p></a></li>
+                <?php elseif (function_exists('access_role') && access_role() === 'Teacher'): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/portal/teacher.php" class="nav-link"><i class="nav-icon fas fa-home"></i><p>Teacher Control Panel</p></a></li>
+                <?php endif; ?>
 
 
                 <!-- =================================================
                      DASHBOARD
                      ================================================= -->
 
-                <li class="nav-item">
+                <?php if (!function_exists('access_role') || access_role() === 'Admin'): ?><li class="nav-item">
 
                     <a
                         href="<?= BASE_URL; ?>/modules/dashboard/index.php"
@@ -68,14 +73,14 @@
 
                     </a>
 
-                </li>
+                </li><?php endif; ?>
 
 
                 <!-- =================================================
                      STUDENTS
                      ================================================= -->
 
-                <li class="nav-item">
+                <?php if (!function_exists('access_role') || access_role() !== 'Student'): ?><li class="nav-item">
 
                     <a
                         href="<?= BASE_URL; ?>/modules/students/index.php"
@@ -90,14 +95,14 @@
 
                     </a>
 
-                </li>
+                </li><?php endif; ?>
 
 
                 <!-- =================================================
                      TEACHERS
                      ================================================= -->
 
-                <li class="nav-item">
+                <?php if (!function_exists('access_role') || access_role() === 'Admin'): ?><li class="nav-item">
 
                     <a
                         href="<?= BASE_URL; ?>/modules/teachers/index.php"
@@ -112,14 +117,34 @@
 
                     </a>
 
-                </li>
+                </li><?php endif; ?>
+
+                <?php if (!function_exists('access_role') || access_role() !== 'Student'): ?><li class="nav-item">
+                    <a href="<?= BASE_URL; ?>/modules/teachers/assignments.php" class="nav-link">
+                        <i class="nav-icon fas fa-user-tie"></i>
+                        <p>Teacher Subjects & Classes</p>
+                    </a>
+                </li><?php endif; ?>
+
+                <?php if ((int)($_SESSION['role_id'] ?? 0) <= 3): ?>
+                <?php if (!function_exists('access_role') || access_role() !== 'Student'): ?><li class="nav-item">
+                    <a href="<?= BASE_URL; ?>/modules/users/index.php" class="nav-link">
+                        <i class="nav-icon fas fa-key"></i>
+                        <p>Login Accounts</p>
+                    </a>
+                </li>                <li class="nav-item">
+                    <a href="<?= BASE_URL; ?>/modules/settings/index.php" class="nav-link">
+                        <i class="nav-icon fas fa-cog"></i><p>School Settings</p>
+                    </a>
+                </li><?php endif; ?>
+                <?php endif; ?>
 
 
                 <!-- =================================================
                      ATTENDANCE
                      ================================================= -->
 
-                <li class="nav-item">
+                <?php if (!function_exists('access_role') || access_role() !== 'Student'): ?><li class="nav-item">
 
                     <a
                         href="<?= BASE_URL; ?>/modules/attendance/index.php"
@@ -134,36 +159,32 @@
 
                     </a>
 
-                </li>
+                </li><?php endif; ?>
 
 
                 <!-- =================================================
                      FEES
                      ================================================= -->
 
-                <li class="nav-item">
-
-                    <a
-                        href="<?= BASE_URL; ?>/modules/fees/index.php"
-                        class="nav-link"
-                    >
-
+                <?php if (!function_exists('access_role') || access_role() === 'Admin'): ?><li class="nav-item has-treeview">
+                    <a href="#" class="nav-link">
                         <i class="nav-icon fas fa-rupee-sign"></i>
-
-                        <p>
-                            Fees
-                        </p>
-
+                        <p>Fees <i class="right fas fa-angle-left"></i></p>
                     </a>
-
-                </li>
+                    <ul class="nav nav-treeview">
+                        <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/fees/index.php" class="nav-link"><i class="far fa-circle nav-icon"></i><p>Fee Dashboard</p></a></li>
+                        <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/fees/index.php#structure" class="nav-link"><i class="far fa-circle nav-icon"></i><p>Fee Structure</p></a></li>
+                        <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/fees/index.php#schedule" class="nav-link"><i class="far fa-circle nav-icon"></i><p>Fee Schedule</p></a></li>
+                        <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/fees/index.php#concession" class="nav-link"><i class="far fa-circle nav-icon"></i><p>Fee Concession</p></a></li>
+                    </ul>
+                </li><?php endif; ?>
 
 
                 <!-- =================================================
                      EXAMINATIONS
                      ================================================= -->
 
-                <li class="nav-item has-treeview">
+                <?php if (!function_exists('access_role') || access_role() !== 'Student'): ?><li class="nav-item has-treeview">
 
                     <a
                         href="#"
@@ -218,6 +239,13 @@
                                 <p>Subjects</p>
                             </a>
                         </li>
+                        <?php if (!function_exists('access_role') || access_role() === 'Admin'): ?>
+                        <li class="nav-item">
+                            <a href="<?= BASE_URL; ?>/modules/results/report_subjects.php" class="nav-link">
+                                <i class="far fa-circle nav-icon"></i><p>Report Card Subjects</p>
+                            </a>
+                        </li>
+                        <?php endif; ?>
 
 
                         <!-- Import Marks -->
@@ -282,7 +310,7 @@
 
                     </ul>
 
-                </li>
+                </li><?php endif; ?>
 
 
                 <!-- =================================================

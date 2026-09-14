@@ -8,6 +8,8 @@
  */
 
 require_once '../../config/database.php';
+require_once '../../config/config.php';
+require_once '../../includes/access.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -16,6 +18,7 @@ if (session_status() === PHP_SESSION_NONE) {
 if (!isset($conn) || !($conn instanceof mysqli)) {
     die("Database connection failed.");
 }
+access_require_roles(array('Admin','Teacher'));
 
 $conn->set_charset("utf8mb4");
 
@@ -23,11 +26,6 @@ $conn->set_charset("utf8mb4");
 /* ============================================================
    BASE URL
    ============================================================ */
-
-if (!defined('BASE_URL')) {
-    define('BASE_URL', '/school_erp');
-}
-
 
 /* ============================================================
    HELPER
@@ -55,6 +53,10 @@ if (
     $delete_id = (int)$_GET['delete'];
 
     if ($delete_id > 0) {
+        if (access_is_teacher()) {
+            http_response_code(403);
+            exit('Teachers cannot delete student records.');
+        }
 
         $stmt = $conn->prepare("
             DELETE FROM students
@@ -72,6 +74,12 @@ if (
             $stmt->execute();
 
             $stmt->close();
+        }
+
+        if (access_is_teacher()) {
+            $students = array_values(array_filter($students, function ($row) use ($conn) {
+                return access_teacher_can_class($conn, (int)$row['class_id'], (int)$row['section_id']);
+            }));
         }
     }
 
@@ -123,6 +131,8 @@ if ($search !== '') {
             s.city,
             s.state,
             s.status,
+            s.class_id,
+            s.section_id,
 
             c.class_name,
 
@@ -196,6 +206,8 @@ if ($search !== '') {
             s.city,
             s.state,
             s.status,
+            s.class_id,
+            s.section_id,
 
             c.class_name,
 
@@ -238,148 +250,9 @@ if ($search !== '') {
 $total_students = count($students);
 
 ?>
-<!DOCTYPE html>
-
-<html lang="en">
-
-<head>
-
-<meta charset="UTF-8">
-
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
->
-
-<title>
-    Students - Oasis Public School ERP
-</title>
-
-
-<!-- Bootstrap -->
-
-<link
-    rel="stylesheet"
-    href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"
->
-
-
-<!-- Font Awesome -->
-
-<link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
->
-
-<link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
-
-
-<style>
-
-body {
-
-    background: #f4f6f9;
-
-    font-family:
-        Arial,
-        Helvetica,
-        sans-serif;
-}
-
-
-.content-wrapper {
-
-    min-height: 100vh;
-
-    padding: 20px;
-}
-
-
-.card {
-
-    border-radius: 6px;
-}
-
-
-.card-header {
-
-    font-weight: bold;
-}
-
-
-.table th {
-
-    white-space: nowrap;
-
-    vertical-align: middle;
-}
-
-
-.table td {
-
-    vertical-align: middle;
-}
-
-
-.student-name {
-
-    font-weight: 600;
-}
-
-
-.action-btn {
-
-    margin-right: 3px;
-}
-
-
-.empty-box {
-
-    padding: 50px;
-
-    text-align: center;
-
-    color: #777;
-}
-
-
-.search-box {
-
-    max-width: 450px;
-}
-
-
-.badge-active {
-
-    background: #28a745;
-
-    color: white;
-}
-
-
-.badge-inactive {
-
-    background: #dc3545;
-
-    color: white;
-}
-
-
-@media(max-width: 768px) {
-
-    .content-wrapper {
-
-        padding: 10px;
-    }
-
-}
-
-</style>
-
-</head>
-
-
-<body>
+<?php include '../../includes/header.php'; ?>
+<?php include '../../includes/navbar.php'; ?>
+<?php include '../../includes/sidebar.php'; ?>
 
 
 <div class="content-wrapper">
@@ -414,6 +287,14 @@ body {
 
 
     <div>
+
+        <a
+            href="<?= BASE_URL; ?>/modules/fees/index.php"
+            class="btn btn-info mr-2"
+        >
+            <i class="fas fa-rupee-sign"></i>
+            Student Fees
+        </a>
 
         <a
             href="<?= BASE_URL; ?>/modules/students/import.php"
@@ -843,6 +724,7 @@ body {
                                 <i class="fas fa-eye"></i>
 
                             </a>
+                            <a href="<?= BASE_URL; ?>/modules/results/student_reports.php?student_id=<?= (int)$student['id']; ?>" class="btn btn-sm btn-success action-btn" title="View Report Cards"><i class="fas fa-file-alt"></i></a>
 
 
                             <!-- EDIT -->
@@ -936,6 +818,4 @@ body {
 ></script>
 
 
-</body>
-
-</html>
+<?php include '../../includes/footer.php'; ?>

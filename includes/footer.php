@@ -3,7 +3,7 @@
 
     <strong>
         Copyright &copy; 2026
-        Oasis Public School ERP.
+        <?= school_e(school_setting('school_name', APP_NAME)); ?>.
     </strong>
 
     <div class="float-right d-none d-sm-inline-block">
@@ -21,6 +21,13 @@
 <script src="<?= BASE_URL; ?>/assets/js/adminlte.min.js"></script>
 
 <script src="<?= BASE_URL; ?>/assets/js/app.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+        navigator.serviceWorker.register('<?= BASE_URL; ?>/sw.js').catch(function () {});
+    });
+}
+</script>
 
 </body>
 </html>

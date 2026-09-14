@@ -1,5 +1,6 @@
 <?php
-session_start();
+require_once '../../includes/access.php';
+access_require_roles(array('Admin'));
 
 // User must be logged in
 if (!isset($_SESSION['user_id'])) {

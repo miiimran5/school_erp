@@ -10,6 +10,7 @@
 
 require_once '../../config/database.php';
 require_once '../../config/config.php';
+require_once '../../includes/access.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -18,6 +19,10 @@ if (session_status() === PHP_SESSION_NONE) {
 if (!isset($_SESSION['user_id'])) {
     header('Location: ../../login.php');
     exit;
+}
+if (access_is_student() && (int)($_GET['student_id'] ?? 0) !== access_student_id()) {
+    http_response_code(403);
+    exit('You can only view your own report card.');
 }
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
@@ -282,6 +287,7 @@ $marks_stmt = $conn->prepare("
         m.subject_id,
         m.max_marks,
         m.obtained_marks,
+        m.grade,
         m.remarks,
 
         s.subject_name,
@@ -323,6 +329,21 @@ while ($row = $marks_result->fetch_assoc()) {
 
 $marks_stmt->close();
 
+$group_order_stmt = $conn->prepare('SELECT class_order FROM classes WHERE id=?');
+$group_order_stmt->bind_param('i', $class_id); $group_order_stmt->execute();
+$group_order = (int)($group_order_stmt->get_result()->fetch_assoc()['class_order'] ?? 0); $group_order_stmt->close();
+$report_group = $group_order <= 3 ? 'nursery-ukg' : ($group_order <= 6 ? 'class-1-3' : ($group_order <= 8 ? 'class-4-5' : ($group_order <= 11 ? 'class-6-8' : ($group_order <= 13 ? 'class-9-10' : 'class-11-12'))));
+$configured_ids = array();
+$group_stmt = $conn->prepare('SELECT subject_id FROM report_card_group_subjects WHERE group_key=? AND status=1');
+$group_stmt->bind_param('s', $report_group); $group_stmt->execute(); $group_result = $group_stmt->get_result();
+while ($group_row = $group_result->fetch_assoc()) { $configured_ids[(int)$group_row['subject_id']] = true; }
+$group_stmt->close();
+if (!empty($configured_ids)) {
+    $marks = array_values(array_filter($marks, function ($mark) use ($configured_ids) {
+        return isset($configured_ids[(int)$mark['subject_id']]);
+    }));
+}
+
 
 /* =========================================================
    CALCULATIONS
@@ -353,13 +374,19 @@ foreach ($marks as &$mark) {
     $mark['percentage'] =
         $percentage;
 
-    $mark['grade'] =
-        getGrade($percentage);
+    $mark['grade'] = $mark['display_grade'];
 
     /*
      * Subject pass/fail
      */
 
+    if (!empty($mark['grade']) && $max <= 0) {
+        $mark['result'] = 'PASS';
+        $mark['display_grade'] = $mark['grade'];
+        $subject_count++;
+        continue;
+    }
+    $mark['display_grade'] = getGrade($percentage);
     if ($percentage < 33) {
 
         $mark['result'] = 'FAIL';

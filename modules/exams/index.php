@@ -20,6 +20,15 @@ $selected_section = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
 $selected_exam = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
 $selected_subject = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
 $max_marks = 100;
+$selected_class_order = 0;
+if ($selected_class > 0) {
+    $class_order_stmt = $conn->prepare("SELECT class_order FROM classes WHERE id=? AND status=1");
+    $class_order_stmt->bind_param('i', $selected_class);
+    $class_order_stmt->execute();
+    $selected_class_order = (int)($class_order_stmt->get_result()->fetch_assoc()['class_order'] ?? 0);
+    $class_order_stmt->close();
+}
+$grade_only = $selected_class_order > 0 && $selected_class_order <= 8;
 ?>
 
 <div class="content-wrapper">
@@ -49,8 +58,8 @@ $max_marks = 100;
 
 <div class="card-header bg-primary text-white">
 Select Examination
-<a href="types.php" class="btn btn-light btn-sm float-right"><i class="fas fa-list-alt"></i> Manage Exam Types</a>
-<a href="subjects.php" class="btn btn-light btn-sm float-right mr-2"><i class="fas fa-book"></i> Manage Subjects</a>
+<a href="types.php" class="btn btn-warning btn-sm float-right"><i class="fas fa-list-alt"></i> Manage Exam Types</a>
+<a href="subjects.php" class="btn btn-success btn-sm float-right mr-2"><i class="fas fa-book"></i> Manage Subjects</a>
 </div>
 
 <div class="card-body">
@@ -104,10 +113,13 @@ Select Examination
 
 <?php
 $subjects = mysqli_query($conn, "
-SELECT id, subject_name
-FROM subjects
-WHERE status = 1
-ORDER BY subject_name
+SELECT s.id, s.subject_name
+FROM subjects s
+INNER JOIN class_subjects cs ON cs.subject_id = s.id
+WHERE s.status = 1
+AND cs.status = 1
+AND cs.class_id = " . (int)$selected_class . "
+ORDER BY cs.sort_order, s.subject_name
 ");
 
 while($subjects && $sub=mysqli_fetch_assoc($subjects)){
@@ -120,6 +132,9 @@ while($subjects && $sub=mysqli_fetch_assoc($subjects)){
 <?php } ?>
 
 </select>
+<?php if ($selected_class > 0 && (!$subjects || mysqli_num_rows($subjects) === 0)): ?>
+<small class="form-text text-danger">No subjects are assigned to this class. Open <a href="subjects.php?class_id=<?= $selected_class; ?>">Manage Subjects</a> and assign subjects to the selected class first.</small>
+<?php endif; ?>
 
 </div>
 
@@ -193,7 +208,7 @@ Enter Marks
 
 <th width="100">Roll No</th>
 <th>Student Name</th>
-<th width="150">Marks</th>
+<th width="150"><?= $grade_only ? 'Grade' : 'Marks'; ?></th>
 
 </tr>
 
@@ -210,6 +225,14 @@ Enter Marks
 <td><?= $stu['student_name']; ?></td>
 
 <td>
+<?php if ($grade_only): ?>
+<select name="grades[<?= $stu['id']; ?>]" class="form-control">
+<option value="">Select grade</option>
+<?php foreach (array('A1','A2','B1','B2','C1','C2','D','E') as $grade): ?>
+<option value="<?= $grade; ?>"><?= $grade; ?></option>
+<?php endforeach; ?>
+</select>
+<?php else: ?>
 
 <input
 type="number"
@@ -219,6 +242,7 @@ max="<?= $max_marks; ?>"
 name="marks[<?= $stu['id']; ?>]"
 class="form-control"
 placeholder="0-<?= $max_marks; ?>">
+<?php endif; ?>
 
 </td>
 
@@ -235,7 +259,7 @@ placeholder="0-<?= $max_marks; ?>">
 <div class="card-footer">
 
 <button class="btn btn-success">
-Save Marks
+Save <?= $grade_only ? 'Grades' : 'Marks'; ?>
 </button>
 
 </div>

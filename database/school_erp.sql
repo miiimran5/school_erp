@@ -35,15 +35,40 @@ CREATE TABLE `teachers` (
   `gender` enum('Male','Female','Other') DEFAULT NULL,
   `date_of_birth` date DEFAULT NULL,
   `mobile` varchar(20) DEFAULT NULL,
+  `alternate_mobile` varchar(20) DEFAULT NULL,
   `email` varchar(120) DEFAULT NULL,
   `designation` varchar(100) DEFAULT NULL,
   `department` varchar(100) DEFAULT NULL,
   `qualification` varchar(255) DEFAULT NULL,
   `joining_date` date DEFAULT NULL,
   `address` text DEFAULT NULL,
+  `photo` varchar(255) DEFAULT NULL,
+  `class_incharge_id` int(11) DEFAULT NULL,
   `status` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `teacher_subjects` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `teacher_id` int(11) NOT NULL,
+  `subject_id` int(11) NOT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_teacher_subject` (`teacher_id`,`subject_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `teacher_class_assignments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `teacher_id` int(11) NOT NULL,
+  `subject_id` int(11) NOT NULL,
+  `class_id` int(11) NOT NULL,
+  `section_id` int(11) DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_teacher_subject_class_section` (`teacher_id`,`subject_id`,`class_id`,`section_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 -- --------------------------------------------------------
@@ -351,6 +376,8 @@ CREATE TABLE `transport_routes` (
 CREATE TABLE `users` (
   `id` int(11) NOT NULL,
   `role_id` int(11) NOT NULL,
+  `account_type` enum('Admin','Teacher','Student') NOT NULL DEFAULT 'Admin',
+  `linked_id` int(11) DEFAULT NULL,
   `full_name` varchar(100) NOT NULL,
   `username` varchar(50) NOT NULL,
   `password` varchar(255) NOT NULL,
@@ -359,6 +386,124 @@ CREATE TABLE `users` (
   `status` tinyint(1) DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `fee_types` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `fee_name` varchar(100) NOT NULL,
+  `description` varchar(255) DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_fee_type_name` (`fee_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `fee_structures` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `class_id` int(11) NOT NULL,
+  `fee_type_id` int(11) NOT NULL,
+  `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `frequency` enum('Monthly','Quarterly','Annual','One Time') NOT NULL DEFAULT 'Monthly',
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `fee_schedules` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `fee_structure_id` int(11) NOT NULL,
+  `due_date` date NOT NULL,
+  `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `student_fee_concessions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` int(11) NOT NULL,
+  `fee_type_id` int(11) DEFAULT NULL,
+  `concession_name` varchar(100) NOT NULL,
+  `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `valid_from` date DEFAULT NULL,
+  `valid_to` date DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `fee_payments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` int(11) NOT NULL,
+  `fee_type_id` int(11) DEFAULT NULL,
+  `payment_date` date NOT NULL,
+  `amount` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `receipt_no` varchar(50) DEFAULT NULL,
+  `remarks` varchar(255) DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `portal_announcements` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `title` varchar(150) NOT NULL,
+  `body` text NOT NULL,
+  `audience` enum('All','Students','Teachers') NOT NULL DEFAULT 'All',
+  `publish_date` date NOT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `portal_holidays` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `holiday_name` varchar(150) NOT NULL,
+  `holiday_date` date NOT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` int(11) DEFAULT NULL,
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `portal_homework` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `class_id` int(11) NOT NULL,
+  `subject_id` int(11) DEFAULT NULL,
+  `title` varchar(150) NOT NULL,
+  `description` text NOT NULL,
+  `due_date` date DEFAULT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `report_card_group_subjects` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `group_key` varchar(20) NOT NULL,
+  `subject_id` int(11) NOT NULL,
+  `display_order` int(11) NOT NULL DEFAULT 0,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_report_group_subject` (`group_key`,`subject_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `school_settings` (
+  `setting_key` varchar(80) NOT NULL,
+  `setting_value` text NOT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`setting_key`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+INSERT INTO `school_settings` (`setting_key`, `setting_value`) VALUES
+('school_name', 'Oasis Public School'),
+('school_tagline', 'School ERP'),
+('school_address', ''),
+('school_phone', ''),
+('school_email', ''),
+('school_logo', ''),
+('school_timezone', 'Asia/Kolkata'),
+('academic_session', '');
 
 --
 -- Table structure for table `student_attendance`

@@ -592,10 +592,15 @@ $stmt = $conn->prepare("
         s.id,
         s.subject_name,
         s.subject_code,
-        s.subject_type
+        s.subject_type,
+        cs.role AS class_subject_role
     FROM marks m
     INNER JOIN subjects s
         ON s.id = m.subject_id
+    INNER JOIN class_subjects cs
+        ON cs.class_id = m.class_id
+       AND cs.subject_id = m.subject_id
+       AND cs.status = 1
     WHERE m.class_id = ?
     AND m.section_id = ?
     AND m.exam_id = ?
@@ -633,19 +638,40 @@ if (count($subjects) === 0) {
 
     $result = $conn->query("
         SELECT
-            id,
-            subject_name,
-            subject_code,
-            subject_type
-        FROM subjects
-        WHERE status = 1
-        ORDER BY id
+            s.id,
+            s.subject_name,
+            s.subject_code,
+            s.subject_type,
+            cs.role AS class_subject_role
+        FROM subjects s
+        INNER JOIN class_subjects cs
+            ON cs.subject_id = s.id
+           AND cs.class_id = " . (int)$class_id . "
+           AND cs.status = 1
+        WHERE s.status = 1
+        ORDER BY cs.sort_order, s.id
     ");
 
     if ($result) {
 
         while ($row = $result->fetch_assoc()) {
             $subjects[] = $row;
+        }
+
+        /* Respect the administrator's manual subject list for each report-card group. */
+        $class_order_stmt = $conn->prepare('SELECT class_order FROM classes WHERE id=?');
+        $class_order_stmt->bind_param('i', $class_id); $class_order_stmt->execute();
+        $class_order = (int)($class_order_stmt->get_result()->fetch_assoc()['class_order'] ?? 0); $class_order_stmt->close();
+        $report_group = $class_order <= 3 ? 'nursery-ukg' : ($class_order <= 6 ? 'class-1-3' : ($class_order <= 8 ? 'class-4-5' : ($class_order <= 11 ? 'class-6-8' : ($class_order <= 13 ? 'class-9-10' : 'class-11-12'))));
+        $configured_subjects = array();
+        $group_stmt = $conn->prepare('SELECT subject_id FROM report_card_group_subjects WHERE group_key=? AND status=1 ORDER BY display_order');
+        $group_stmt->bind_param('s', $report_group); $group_stmt->execute(); $group_result = $group_stmt->get_result();
+        while ($group_row = $group_result->fetch_assoc()) { $configured_subjects[(int)$group_row['subject_id']] = true; }
+        $group_stmt->close();
+        if (!empty($configured_subjects)) {
+            $subjects = array_values(array_filter($subjects, function ($subject) use ($configured_subjects) {
+                return isset($configured_subjects[(int)$subject['id']]);
+            }));
         }
     }
 }
@@ -662,16 +688,14 @@ $otherSubjects = [];
 
 foreach ($subjects as $subject) {
 
+    $role = trim((string)($subject['class_subject_role'] ?? ''));
     $type = strtolower(
         trim(
             (string)$subject['subject_type']
         )
     );
 
-    if (
-        $type === '' ||
-        $type === 'scholastic'
-    ) {
+    if ($role === 'Main' || ($role === '' && ($type === '' || $type === 'scholastic'))) {
 
         $scholasticSubjects[] = $subject;
 

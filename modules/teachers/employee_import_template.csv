@@ -1,2 +1,2 @@
-employee_code,full_name,role,gender,date_of_birth,mobile,email,designation,department,qualification,joining_date,address,status
-EMP-001,Example Employee,Teacher,Female,,9876543210,employee@example.com,PGT,Teaching,B.Ed,,,1
+full_name,mobile,alternate_mobile,email,department,designation,qualification,date_of_birth,joining_date,gender,address,class_incharge_id,status
+Example Employee,9876543210,,employee@example.com,Teaching,PGT,B.Ed,,,Female,,,1

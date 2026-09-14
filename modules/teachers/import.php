@@ -8,13 +8,13 @@ if (!($conn instanceof mysqli)) { die('Database connection failed.'); }
 $conn->set_charset('utf8mb4');
 function employee_import_e($v) { return htmlspecialchars((string)$v, ENT_QUOTES, 'UTF-8'); }
 
-$headers = array('employee_code','full_name','role','gender','date_of_birth','mobile','email','designation','department','qualification','joining_date','address','status');
+$headers = array('full_name','mobile','alternate_mobile','email','department','designation','qualification','date_of_birth','joining_date','gender','address','class_incharge_id','status');
 if (isset($_GET['download_template'])) {
     header('Content-Type: text/csv; charset=UTF-8');
     header('Content-Disposition: attachment; filename="employees_import_template.csv"');
     $out = fopen('php://output', 'w');
     fputcsv($out, $headers);
-    fputcsv($out, array('EMP-001','Example Employee','Teacher','Female','','9876543210','employee@example.com','PGT','Teaching','B.Ed','','','1'));
+    fputcsv($out, array('Example Employee','9876543210','','employee@example.com','Teaching','PGT','B.Ed','','','Female','','','1'));
     fclose($out);
     exit;
 }
@@ -34,7 +34,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($file_headers !== $headers) {
             $errors[] = 'CSV headings do not match the employee template.';
         } else {
-            $stmt = $conn->prepare("INSERT INTO teachers (employee_code, full_name, role, gender, date_of_birth, mobile, email, designation, department, qualification, joining_date, address, status) VALUES (?, ?, ?, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, NULLIF(?, ''), ?, ?)");
+            $stmt = $conn->prepare("INSERT INTO teachers (employee_code, full_name, role, gender, date_of_birth, mobile, alternate_mobile, email, designation, department, qualification, joining_date, address, class_incharge_id, status) VALUES (?, ?, NULL, NULLIF(?, ''), NULLIF(?, ''), ?, ?, ?, ?, ?, ?, NULLIF(?, ''), ?, NULLIF(?, 0), ?)");
             $conn->begin_transaction();
             $line = 1;
             $imported = 0;
@@ -45,11 +45,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $row = array_combine($headers, array_slice($values, 0, count($headers)));
                 foreach ($row as $key => $value) { $row[$key] = trim((string)$value); }
                 $status = $row['status'] === '' ? 1 : (int)$row['status'];
-                if ($row['employee_code'] === '' || $row['full_name'] === '' || !in_array($status, array(0,1), true) || ($row['email'] !== '' && !filter_var($row['email'], FILTER_VALIDATE_EMAIL)) || !in_array($row['department'], $employee_departments, true) || (!employee_option_is_valid($row['department'], $row['designation']) && !employee_custom_designation_is_valid($row['department'], $row['designation']))) {
+                if ($row['full_name'] === '' || !in_array($status, array(0,1), true) || ($row['email'] !== '' && !filter_var($row['email'], FILTER_VALIDATE_EMAIL)) || !in_array($row['department'], $employee_departments, true) || (!employee_option_is_valid($row['department'], $row['designation']) && !employee_custom_designation_is_valid($row['department'], $row['designation']))) {
                     $errors[] = 'Line ' . $line . ': employee details, department, designation, status, and email must be valid.';
                     continue;
                 }
-                $stmt->bind_param('ssssssssssssi', $row['employee_code'],$row['full_name'],$row['role'],$row['gender'],$row['date_of_birth'],$row['mobile'],$row['email'],$row['designation'],$row['department'],$row['qualification'],$row['joining_date'],$row['address'],$status);
+                $employee_code = 'EMP-' . date('ymdHis') . '-' . $line . '-' . mt_rand(100, 999);
+                $class_incharge_id = (int)$row['class_incharge_id'];
+                $stmt->bind_param('ssssssssssssii', $employee_code,$row['full_name'],$row['gender'],$row['date_of_birth'],$row['mobile'],$row['alternate_mobile'],$row['email'],$row['designation'],$row['department'],$row['qualification'],$row['joining_date'],$row['address'],$class_incharge_id,$status);
                 if (!$stmt->execute()) { $errors[] = 'Line ' . $line . ': ' . $stmt->error; } else { $imported++; }
             }
             fclose($handle);

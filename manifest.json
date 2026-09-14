@@ -1,0 +1,17 @@
+{
+  "name": "Oasis Public School ERP",
+  "short_name": "Oasis ERP",
+  "start_url": "login.php",
+  "display": "standalone",
+  "background_color": "#f4f7fb",
+  "theme_color": "#172554",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "assets/icons/erp-icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

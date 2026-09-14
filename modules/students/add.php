@@ -9,10 +9,13 @@
  */
 
 require_once '../../config/database.php';
+require_once '../../config/config.php';
+require_once '../../includes/access.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+access_require_roles(array('Admin'));
 
 
 /* ============================================================
@@ -29,11 +32,6 @@ $conn->set_charset("utf8mb4");
 /* ============================================================
    BASE URL
    ============================================================ */
-
-if (!defined('BASE_URL')) {
-    define('BASE_URL', '/school_erp');
-}
-
 
 /* ============================================================
    HELPER
@@ -413,116 +411,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
    ============================================================ */
 
 ?>
-<!DOCTYPE html>
-
-<html lang="en">
-
-<head>
-
-<meta charset="UTF-8">
-
-<meta
-    name="viewport"
-    content="width=device-width, initial-scale=1.0"
->
-
-<title>
-    Add Student - Oasis Public School ERP
-</title>
-
-<link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
-
-
-<!-- Bootstrap -->
-
-<link
-    rel="stylesheet"
-    href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"
->
-
-
-<!-- Font Awesome -->
-
-<link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css"
->
-
-
-<style>
-
-body {
-
-    background: #f4f6f9;
-
-    font-family:
-        Arial,
-        Helvetica,
-        sans-serif;
-}
-
-
-.content-wrapper {
-
-    min-height: 100vh;
-
-    padding: 20px;
-}
-
-
-.card {
-
-    border-radius: 6px;
-
-    margin-bottom: 20px;
-}
-
-
-.card-header {
-
-    font-weight: 600;
-}
-
-
-.form-group label {
-
-    font-weight: 600;
-}
-
-
-.required {
-
-    color: #dc3545;
-}
-
-
-.form-control,
-.custom-select {
-
-    border-radius: 4px;
-}
-
-
-.btn {
-
-    border-radius: 4px;
-}
-
-
-.section-title {
-
-    font-size: 18px;
-
-    font-weight: 600;
-}
-
-
-</style>
-
-</head>
-
-
-<body>
+<?php include '../../includes/header.php'; ?>
+<?php include '../../includes/navbar.php'; ?>
+<?php include '../../includes/sidebar.php'; ?>
 
 
 <div class="content-wrapper">
@@ -1655,6 +1546,4 @@ body {
 ></script>
 
 
-</body>
-
-</html>
+<?php include '../../includes/footer.php'; ?>
