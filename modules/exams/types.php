@@ -56,10 +56,18 @@ if (isset($_GET['toggle']) && ctype_digit((string)$_GET['toggle'])) {
     $stmt = $conn->prepare('UPDATE exam_types SET status = IF(status = 1, 0, 1) WHERE id = ?');
     if ($stmt) {
         $stmt->bind_param('i', $id);
-        $stmt->execute();
+        if (!$stmt->execute()) {
+            $error = 'Unable to update exam type status: ' . $stmt->error;
+        } elseif ($stmt->affected_rows === 0) {
+            $error = 'Exam type not found.';
+        } else {
+            $stmt->close();
+            header('Location: types.php?updated=1');
+            exit;
+        }
         $stmt->close();
-        header('Location: types.php?updated=1');
-        exit;
+    } else {
+        $error = 'Unable to prepare exam type status update: ' . $conn->error;
     }
 }
 

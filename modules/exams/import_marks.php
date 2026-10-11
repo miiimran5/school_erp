@@ -32,6 +32,24 @@ function h($value)
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
+function tableExists($conn, $table)
+{
+    $stmt = $conn->prepare(
+        'SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1'
+    );
+    if (!$stmt) {
+        return false;
+    }
+    $stmt->bind_param('s', $table);
+    if (!$stmt->execute()) {
+        $stmt->close();
+        return false;
+    }
+    $exists = $stmt->get_result()->num_rows > 0;
+    $stmt->close();
+    return $exists;
+}
+
 /* ---------------------------------------------------------
    Grade calculation
 --------------------------------------------------------- */
@@ -54,75 +72,151 @@ function calculateGrade($marks)
 --------------------------------------------------------- */
 if (isset($_GET['download_template'])) {
 
-    $filename = 'HPC_Marks_Template.csv';
+    $template_class_id = (int)($_GET['class_id'] ?? 0);
+    $template_section_id = (int)($_GET['section_id'] ?? 0);
+    $template_exam_id = (int)($_GET['exam_id'] ?? 0);
+    if ($template_class_id <= 0 || $template_section_id <= 0 || $template_exam_id <= 0) {
+        http_response_code(400);
+        exit('Select a class, section, and examination before downloading the offline template.');
+    }
 
+    $details = $conn->prepare(
+        'SELECT c.class_name, c.class_order, sec.section_name, e.exam_name
+         FROM classes c
+         INNER JOIN sections sec ON sec.id = ?
+         INNER JOIN exams e ON e.id = ?
+         WHERE c.id = ? AND c.status = 1'
+    );
+    if (!$details) {
+        http_response_code(500);
+        exit('Unable to prepare template details: ' . h($conn->error));
+    }
+    $details->bind_param('iii', $template_section_id, $template_exam_id, $template_class_id);
+    if (!$details->execute()) {
+        $message = $details->error;
+        $details->close();
+        http_response_code(500);
+        exit('Unable to load template details: ' . h($message));
+    }
+    $template_details = $details->get_result()->fetch_assoc();
+    $details->close();
+    if (!$template_details || (int)$template_details['class_order'] < 4) {
+        http_response_code(400);
+        exit('Offline numeric marks templates are available for Classes I-XII only.');
+    }
+    $template_class_order = (int)$template_details['class_order'];
+    $template_report_group = $template_class_order <= 6
+        ? 'class-1-3'
+        : ($template_class_order <= 8
+            ? 'class-4-5'
+            : ($template_class_order <= 11
+                ? 'class-6-8'
+                : ($template_class_order <= 13 ? 'class-9-10' : 'class-11-12')));
+
+    $students_stmt = $conn->prepare(
+        "SELECT admission_no, student_name
+         FROM students
+         WHERE class_id = ? AND section_id = ? AND status = 1
+         ORDER BY CASE WHEN roll_no IS NULL OR roll_no = '' THEN 999999 ELSE CAST(roll_no AS UNSIGNED) END, student_name"
+    );
+    if (!$students_stmt) {
+        http_response_code(500);
+        exit('Unable to prepare student list: ' . h($conn->error));
+    }
+    $students_stmt->bind_param('ii', $template_class_id, $template_section_id);
+    if (!$students_stmt->execute()) {
+        $message = $students_stmt->error;
+        $students_stmt->close();
+        http_response_code(500);
+        exit('Unable to load students: ' . h($message));
+    }
+    $template_students = $students_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $students_stmt->close();
+
+    $group_filter = tableExists($conn, 'report_card_group_subjects')
+        ? "AND (
+                NOT EXISTS (
+                    SELECT 1 FROM report_card_group_subjects
+                    WHERE group_key = ? AND status = 1
+                )
+                OR EXISTS (
+                    SELECT 1 FROM report_card_group_subjects rcgs
+                    WHERE rcgs.group_key = ? AND rcgs.status = 1
+                      AND rcgs.subject_id = s.id
+                )
+           )"
+        : '';
+    $subjects_stmt = $conn->prepare(
+        "SELECT s.id, s.subject_code, s.subject_name, s.subject_type
+         FROM class_subjects cs
+         INNER JOIN subjects s ON s.id = cs.subject_id
+         WHERE cs.class_id = ? AND cs.status = 1 AND s.status = 1
+           AND (cs.role IN ('Main', 'Grading') OR s.subject_type = 'Practical')
+           {$group_filter}
+         ORDER BY cs.sort_order, s.id"
+    );
+    if (!$subjects_stmt) {
+        http_response_code(500);
+        exit('Unable to prepare class subject list: ' . h($conn->error));
+    }
+    if ($group_filter !== '') {
+        $subjects_stmt->bind_param('iss', $template_class_id, $template_report_group, $template_report_group);
+    } else {
+        $subjects_stmt->bind_param('i', $template_class_id);
+    }
+    if (!$subjects_stmt->execute()) {
+        $message = $subjects_stmt->error;
+        $subjects_stmt->close();
+        http_response_code(500);
+        exit('Unable to load class subjects: ' . h($message));
+    }
+    $template_subjects = $subjects_stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $subjects_stmt->close();
+    if (empty($template_students) || empty($template_subjects)) {
+        http_response_code(400);
+        exit('No active students or scholastic subjects were found for the selected class and section.');
+    }
+
+    $component_headers = $template_class_order >= 14
+        ? array('practical_marks', 'practical_max_marks', 'theory_marks', 'theory_max_marks')
+        : ($template_class_order >= 9
+            ? array('pa_marks', 'se_marks', 'nb_marks', 'multiple_assessment_marks', 'written_marks')
+            : array('pa_marks', 'se_marks', 'nb_marks', 'written_marks'));
+    $headers = array_merge(
+        array('admission_no', 'student_name', 'class_name', 'section_name', 'exam_name', 'subject_code', 'subject_name', 'subject_type'),
+        $component_headers,
+        array('obtained_marks', 'grade', 'remarks')
+    );
+
+    $filename = 'HPC_' . preg_replace('/[^A-Za-z0-9_-]+/', '_', $template_details['class_name'])
+        . '_' . preg_replace('/[^A-Za-z0-9_-]+/', '_', $template_details['section_name']) . '_'
+        . preg_replace('/[^A-Za-z0-9_-]+/', '_', $template_details['exam_name']) . '.csv';
     header('Content-Type: text/csv; charset=utf-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
-
     $output = fopen('php://output', 'w');
-
-    $headers = [
-        'admission_no',
-        'student_name',
-        'class_name',
-        'section_name',
-        'exam_name',
-        'subject_code',
-        'subject_name',
-        'subject_type',
-
-        'pa_marks',
-        'se_marks',
-        'nb_marks',
-        'written_marks',
-        'obtained_marks',
-        'grade',
-        'remarks',
-
-        'computer_term_i',
-        'computer_term_ii',
-        'physical_education_term_i',
-        'physical_education_term_ii',
-        'urdu_term_i',
-        'urdu_term_ii',
-        'gk_term_i',
-        'gk_term_ii',
-
-        'critical_thinking_term_i',
-        'critical_thinking_term_ii',
-        'problem_solving_term_i',
-        'problem_solving_term_ii',
-        'communication_term_i',
-        'communication_term_ii',
-
-        'respect_for_others_term_i',
-        'respect_for_others_term_ii',
-        'responsibility_term_i',
-        'responsibility_term_ii',
-        'honesty_term_i',
-        'honesty_term_ii',
-        'empathy_term_i',
-        'empathy_term_ii',
-
-        'work_habits_term_i',
-        'work_habits_term_ii',
-        'time_management_term_i',
-        'time_management_term_ii',
-        'organization_term_i',
-        'organization_term_ii',
-        'initiative_term_i',
-        'initiative_term_ii',
-        'perseverance_term_i',
-        'perseverance_term_ii',
-
-        'leadership_role_term_i',
-        'leadership_role_term_ii',
-        'team_work_collaboration_term_i',
-        'team_work_collaboration_term_ii'
-    ];
-
+    fwrite($output, "\xEF\xBB\xBF");
     fputcsv($output, $headers);
-
+    foreach ($template_students as $student) {
+        foreach ($template_subjects as $subject) {
+            $row = array(
+                $student['admission_no'],
+                $student['student_name'],
+                $template_details['class_name'],
+                $template_details['section_name'],
+                $template_details['exam_name'],
+                $subject['subject_code'],
+                $subject['subject_name'],
+                $subject['subject_type']
+            );
+            foreach ($component_headers as $component_header) {
+                $row[] = '';
+            }
+            $row[] = '';
+            $row[] = '';
+            $row[] = '';
+            fputcsv($output, $row);
+        }
+    }
     fclose($output);
     exit;
 }
@@ -162,7 +256,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
             } else {
 
                 $headers = array_map(function ($value) {
-                    return trim(strtolower($value));
+                    return trim(strtolower(preg_replace('/^\xEF\xBB\xBF/', '', $value)));
                 }, $headers);
 
                 $header_map = [];
@@ -171,14 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                     $header_map[$header] = $index;
                 }
 
-                $required = [
-                    'admission_no',
-                    'subject_name',
-                    'pa_marks',
-                    'se_marks',
-                    'nb_marks',
-                    'written_marks'
-                ];
+                $required = array('admission_no', 'subject_name', 'exam_name');
 
                 $missing = [];
 
@@ -228,9 +315,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 
                         /* Student */
                         $stmt = $conn->prepare(
-                            "SELECT id, class_id, section_id
-                             FROM students
-                             WHERE admission_no = ?
+                            "SELECT s.id, s.class_id, s.section_id, c.class_order,
+                                    c.class_name, sec.section_name
+                             FROM students s
+                             INNER JOIN classes c ON c.id = s.class_id
+                             INNER JOIN sections sec ON sec.id = s.section_id
+                             WHERE s.admission_no = ? AND s.status = 1
                              LIMIT 1"
                         );
 
@@ -256,12 +346,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                         $student_id = (int)$student['id'];
                         $class_id = (int)$student['class_id'];
                         $section_id = (int)$student['section_id'];
+                        $class_order = (int)$student['class_order'];
+
+                        if ($class_order < 4) {
+                            $errors[] = "Admission No. {$admission_no}: offline numeric imports are available for Classes I-XII.";
+                            continue;
+                        }
+
+                        $component_fields = $class_order >= 14
+                            ? array('practical_marks', 'practical_max_marks', 'theory_marks', 'theory_max_marks')
+                            : ($class_order >= 9
+                                ? array('pa_marks', 'se_marks', 'nb_marks', 'multiple_assessment_marks', 'written_marks')
+                                : array('pa_marks', 'se_marks', 'nb_marks', 'written_marks'));
+                        $missing_components = array_values(array_filter($component_fields, function ($field) use ($header_map) {
+                            return !array_key_exists($field, $header_map);
+                        }));
+                        if (!empty($missing_components)) {
+                            $errors[] = "Admission No. {$admission_no}: template is missing " . implode(', ', $missing_components) . '.';
+                            continue;
+                        }
+
+                        $row_has_marks = false;
+                        foreach ($component_fields as $field) {
+                            if ($get($field) !== '') {
+                                $row_has_marks = true;
+                                break;
+                            }
+                        }
+                        if (!$row_has_marks) {
+                            $skipped++;
+                            continue;
+                        }
+
+                        if (($get('class_name') !== '' && $get('class_name') !== $student['class_name'])
+                            || ($get('section_name') !== '' && $get('section_name') !== $student['section_name'])) {
+                            $errors[] = "Admission No. {$admission_no}: row class or section does not match the student's current assignment.";
+                            continue;
+                        }
 
                         /* Subject */
                         $stmt = $conn->prepare(
-                            "SELECT id
-                             FROM subjects
-                             WHERE subject_name = ?
+                            "SELECT s.id
+                             FROM subjects s
+                             INNER JOIN class_subjects cs ON cs.subject_id = s.id
+                             WHERE s.subject_name = ? AND s.status = 1
+                               AND cs.class_id = ? AND cs.status = 1
                              LIMIT 1"
                         );
 
@@ -270,7 +399,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                             continue;
                         }
 
-                        $stmt->bind_param('s', $subject_name);
+                        $stmt->bind_param('si', $subject_name, $class_id);
                         $stmt->execute();
 
                         $subject_result = $stmt->get_result();
@@ -288,13 +417,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 
                         /* Exam */
                         $exam_name = $get('exam_name');
-
-                        if ($exam_name === '') {
-                            $errors[] =
-                                "Admission No. {$admission_no}: exam name missing.";
-                            continue;
-                        }
-
                         $stmt = $conn->prepare(
                             "SELECT id
                              FROM exams
@@ -324,36 +446,79 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                         $exam_id = (int)$exam['id'];
 
                         /* Marks */
-                        $pa = (float)$get('pa_marks');
-                        $se = (float)$get('se_marks');
-                        $nb = (float)$get('nb_marks');
-                        $written = (float)$get('written_marks');
+                        $pa = null;
+                        $se = null;
+                        $nb = null;
+                        $multiple_assessment = null;
+                        $written = null;
+                        $practical = null;
+                        $practical_max = null;
+                        $theory = null;
+                        $theory_max = null;
 
-                        if ($pa < 0 || $pa > 10) {
-                            $errors[] =
-                                "Admission No. {$admission_no}: PA must be 0-10.";
+                        $component_limits = $class_order >= 14
+                            ? array(
+                                'practical_marks' => null,
+                                'practical_max_marks' => null,
+                                'theory_marks' => null,
+                                'theory_max_marks' => null
+                            )
+                            : ($class_order >= 9
+                                ? array(
+                                    'pa_marks' => 5,
+                                    'se_marks' => 5,
+                                    'nb_marks' => 5,
+                                    'multiple_assessment_marks' => 5,
+                                    'written_marks' => 80
+                                )
+                                : array(
+                                    'pa_marks' => 5,
+                                    'se_marks' => 10,
+                                    'nb_marks' => 5,
+                                    'written_marks' => 80
+                                ));
+                        $component_values = array();
+                        $invalid_component = false;
+                        foreach ($component_limits as $field => $maximum) {
+                            $raw_value = $get($field);
+                            if ($raw_value === '' || !is_numeric($raw_value) || (float)$raw_value < 0) {
+                                $errors[] = "Admission No. {$admission_no}: {$field} must be a non-negative number.";
+                                $invalid_component = true;
+                                break;
+                            }
+                            $component_values[$field] = (float)$raw_value;
+                            if ($maximum !== null && (float)$raw_value > $maximum) {
+                                $errors[] = "Admission No. {$admission_no}: {$field} must be between 0 and {$maximum}.";
+                                $invalid_component = true;
+                                break;
+                            }
+                        }
+                        if ($invalid_component) {
                             continue;
                         }
 
-                        if ($se < 0 || $se > 5) {
-                            $errors[] =
-                                "Admission No. {$admission_no}: SE must be 0-5.";
-                            continue;
+                        if ($class_order >= 14) {
+                            $practical = $component_values['practical_marks'];
+                            $practical_max = $component_values['practical_max_marks'];
+                            $theory = $component_values['theory_marks'];
+                            $theory_max = $component_values['theory_max_marks'];
+                            if ($practical > $practical_max || $theory > $theory_max || ($practical_max + $theory_max) <= 0) {
+                                $errors[] = "Admission No. {$admission_no}: practical and theory marks must not exceed their maximums, and their combined maximum must be positive.";
+                                continue;
+                            }
+                            $obtained = $practical + $theory;
+                            $max_marks = $practical_max + $theory_max;
+                        } else {
+                            $pa = $component_values['pa_marks'];
+                            $se = $component_values['se_marks'];
+                            $nb = $component_values['nb_marks'];
+                            $written = $component_values['written_marks'];
+                            if ($class_order >= 9) {
+                                $multiple_assessment = $component_values['multiple_assessment_marks'];
+                            }
+                            $obtained = $pa + $se + $nb + (float)($multiple_assessment ?? 0) + $written;
+                            $max_marks = 100;
                         }
-
-                        if ($nb < 0 || $nb > 5) {
-                            $errors[] =
-                                "Admission No. {$admission_no}: NB must be 0-5.";
-                            continue;
-                        }
-
-                        if ($written < 0 || $written > 80) {
-                            $errors[] =
-                                "Admission No. {$admission_no}: Written must be 0-80.";
-                            continue;
-                        }
-
-                        $obtained = $pa + $se + $nb + $written;
 
                         $remarks = $get('remarks');
 
@@ -394,11 +559,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                                 "UPDATE marks
                                  SET class_id = ?,
                                      section_id = ?,
-                                     max_marks = 100,
+                                     max_marks = ?,
                                      pa_marks = ?,
                                      se_marks = ?,
                                      nb_marks = ?,
+                                     multiple_assessment_marks = ?,
                                      written_marks = ?,
+                                     practical_marks = ?,
+                                     practical_max_marks = ?,
+                                     theory_marks = ?,
+                                     theory_max_marks = ?,
                                      obtained_marks = ?,
                                      remarks = ?
                                  WHERE id = ?"
@@ -410,13 +580,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                             }
 
                             $update->bind_param(
-                                'iidddddsi',
+                                'iidddddddddddsi',
                                 $class_id,
                                 $section_id,
+                                $max_marks,
                                 $pa,
                                 $se,
                                 $nb,
+                                $multiple_assessment,
                                 $written,
+                                $practical,
+                                $practical_max,
+                                $theory,
+                                $theory_max,
                                 $obtained,
                                 $remarks,
                                 $mark_id
@@ -445,12 +621,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                                     pa_marks,
                                     se_marks,
                                     nb_marks,
+                                    multiple_assessment_marks,
                                     written_marks,
+                                    practical_marks,
+                                    practical_max_marks,
+                                    theory_marks,
+                                    theory_max_marks,
                                     obtained_marks,
                                     remarks
                                 )
-                                VALUES
-                                (?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, ?)"
+                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                             );
 
                             if (!$insert) {
@@ -459,16 +639,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                             }
 
                             $insert->bind_param(
-                                'iiiiiddddds',
+                                'iiiiiddddddddddds',
                                 $student_id,
                                 $class_id,
                                 $section_id,
                                 $subject_id,
                                 $exam_id,
+                                $max_marks,
                                 $pa,
                                 $se,
                                 $nb,
+                                $multiple_assessment,
                                 $written,
+                                $practical,
+                                $practical_max,
+                                $theory,
+                                $theory_max,
                                 $obtained,
                                 $remarks
                             );
@@ -1192,13 +1378,20 @@ CSV Marks Import
 
 <div class="action-bar">
 
-<a href="?download_template=1"
+<?php if ($class_id > 0 && $section_id > 0 && $exam_id > 0): ?>
+<a href="?download_template=1&amp;class_id=<?= (int)$class_id ?>&amp;section_id=<?= (int)$section_id ?>&amp;exam_id=<?= (int)$exam_id ?>"
    class="btn btn-success btn-modern">
 
 <i class="bi bi-download"></i>
-Download HPC CSV Template
+Download Offline Class Template
 
 </a>
+<?php else: ?>
+<button type="button" class="btn btn-success btn-modern" disabled>
+<i class="bi bi-download"></i>
+Select class, section, and exam below to download the template
+</button>
+<?php endif; ?>
 
 </div>
 
@@ -1227,6 +1420,7 @@ Upload Filled HPC CSV
 
 <div class="small-note mt-2">
 Fill the downloaded template in Excel and save it as CSV UTF-8 before uploading.
+The template is pre-filled with this class roster and its assigned scholastic subjects. Fill every mark component for each subject; use 0 when the student scored zero.
 </div>
 
 </div>

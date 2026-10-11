@@ -1,6 +1,6 @@
 <?php
 /**
- * ============================================================
+ * == ==========================================================
  * SCHOOL ERP - T-037
  * CBSE HOLISTIC PROGRESS CARD (HPC)
  * FINAL generate.php
@@ -248,9 +248,10 @@ function columnExists($conn, $table, $column)
 */
 
 $class_name = '';
+$class_order = 0;
 
 $stmt = $conn->prepare("
-    SELECT class_name
+    SELECT class_name, class_order
     FROM classes
     WHERE id = ?
     LIMIT 1
@@ -267,6 +268,7 @@ $result = $stmt->get_result();
 
 if ($row = $result->fetch_assoc()) {
     $class_name = $row['class_name'];
+    $class_order = (int)$row['class_order'];
 }
 
 $stmt->close();
@@ -275,6 +277,39 @@ $stmt->close();
 if ($class_name === '') {
     die("Class not found.");
 }
+
+$report_components = array();
+if ($class_order >= 14) {
+    $report_components = array(
+        'practical_marks' => array('label' => 'Practical', 'max' => null),
+        'theory_marks' => array('label' => 'Theory', 'max' => null)
+    );
+} elseif ($class_order >= 9) {
+    $report_components = array(
+        'pa_marks' => array('label' => 'P.A.', 'max' => 5),
+        'se_marks' => array('label' => 'S.E.A.', 'max' => 5),
+        'nb_marks' => array('label' => 'N.B.', 'max' => 5),
+        'multiple_assessment_marks' => array('label' => 'Multiple Asst.', 'max' => 5),
+        'written_marks' => array('label' => 'Written', 'max' => 80)
+    );
+} elseif ($class_order >= 4) {
+    $report_components = array(
+        'pa_marks' => array('label' => 'P.A.', 'max' => 5),
+        'se_marks' => array('label' => 'S.E.A.', 'max' => 10),
+        'nb_marks' => array('label' => 'N.B.', 'max' => 5),
+        'written_marks' => array('label' => 'Written', 'max' => 80)
+    );
+} else {
+    $report_components = array(
+        'pa_marks' => array('label' => 'P.A.', 'max' => 10),
+        'se_marks' => array('label' => 'S.E.', 'max' => 5),
+        'nb_marks' => array('label' => 'N.B.', 'max' => 5),
+        'written_marks' => array('label' => 'Written', 'max' => 80)
+    );
+}
+$report_component_column_count = $class_order >= 14
+    ? (count($report_components) * 2 + 3)
+    : (count($report_components) + 1);
 
 
 /*
@@ -474,6 +509,42 @@ $has_written = columnExists(
     'written_marks'
 );
 
+$has_multiple_assessment = columnExists(
+    $conn,
+    'marks',
+    'multiple_assessment_marks'
+);
+
+$has_practical = columnExists(
+    $conn,
+    'marks',
+    'practical_marks'
+);
+
+$has_practical_max = columnExists(
+    $conn,
+    'marks',
+    'practical_max_marks'
+);
+
+$has_theory = columnExists(
+    $conn,
+    'marks',
+    'theory_marks'
+);
+
+$has_theory_max = columnExists(
+    $conn,
+    'marks',
+    'theory_max_marks'
+);
+
+$has_grade = columnExists(
+    $conn,
+    'marks',
+    'grade'
+);
+
 
 /*
 |--------------------------------------------------------------------------
@@ -495,6 +566,30 @@ $nb_sql = $has_nb
 
 $written_sql = $has_written
     ? "m.written_marks"
+    : "NULL";
+
+$multiple_assessment_sql = $has_multiple_assessment
+    ? "m.multiple_assessment_marks"
+    : "NULL";
+
+$practical_sql = $has_practical
+    ? "m.practical_marks"
+    : "NULL";
+
+$practical_max_sql = $has_practical_max
+    ? "m.practical_max_marks"
+    : "NULL";
+
+$theory_sql = $has_theory
+    ? "m.theory_marks"
+    : "NULL";
+
+$theory_max_sql = $has_theory_max
+    ? "m.theory_max_marks"
+    : "NULL";
+
+$grade_sql = $has_grade
+    ? "m.grade"
     : "NULL";
 
 
@@ -575,105 +670,55 @@ while ($row = $result->fetch_assoc()) {
 $stmt->close();
 
 
-/*
-|--------------------------------------------------------------------------
-| GET SUBJECTS
-|--------------------------------------------------------------------------
-|
-| First get subjects appearing in marks for this examination.
-| If none exist, get all active Scholastic subjects.
-|--------------------------------------------------------------------------
-*/
-
 $subjects = [];
 
 $stmt = $conn->prepare("
-    SELECT DISTINCT
+    SELECT
         s.id,
         s.subject_name,
         s.subject_code,
         s.subject_type,
         cs.role AS class_subject_role
-    FROM marks m
-    INNER JOIN subjects s
-        ON s.id = m.subject_id
+    FROM subjects s
     INNER JOIN class_subjects cs
-        ON cs.class_id = m.class_id
-       AND cs.subject_id = m.subject_id
+        ON cs.subject_id = s.id
+       AND cs.class_id = ?
        AND cs.status = 1
-    WHERE m.class_id = ?
-    AND m.section_id = ?
-    AND m.exam_id = ?
-    ORDER BY s.id
+    WHERE s.status = 1
+    ORDER BY cs.sort_order, s.id
 ");
 
-if ($stmt) {
-
-    $stmt->bind_param(
-        "iii",
-        $class_id,
-        $section_id,
-        $exam_id
-    );
-
-    $stmt->execute();
-
-    $result = $stmt->get_result();
-
-    while ($row = $result->fetch_assoc()) {
-        $subjects[] = $row;
-    }
-
-    $stmt->close();
+if (!$stmt) {
+    die("Subject query error: " . h($conn->error));
 }
+$stmt->bind_param('i', $class_id);
+if (!$stmt->execute()) {
+    die("Subject query error: " . h($stmt->error));
+}
+$result = $stmt->get_result();
+while ($row = $result->fetch_assoc()) {
+    $subjects[] = $row;
+}
+$stmt->close();
 
-
-/*
-|--------------------------------------------------------------------------
-| IF NO MARKS SUBJECTS FOUND
-|--------------------------------------------------------------------------
-*/
-
-if (count($subjects) === 0) {
-
-    $result = $conn->query("
-        SELECT
-            s.id,
-            s.subject_name,
-            s.subject_code,
-            s.subject_type,
-            cs.role AS class_subject_role
-        FROM subjects s
-        INNER JOIN class_subjects cs
-            ON cs.subject_id = s.id
-           AND cs.class_id = " . (int)$class_id . "
-           AND cs.status = 1
-        WHERE s.status = 1
-        ORDER BY cs.sort_order, s.id
-    ");
-
-    if ($result) {
-
-        while ($row = $result->fetch_assoc()) {
-            $subjects[] = $row;
-        }
-
-        /* Respect the administrator's manual subject list for each report-card group. */
-        $class_order_stmt = $conn->prepare('SELECT class_order FROM classes WHERE id=?');
-        $class_order_stmt->bind_param('i', $class_id); $class_order_stmt->execute();
-        $class_order = (int)($class_order_stmt->get_result()->fetch_assoc()['class_order'] ?? 0); $class_order_stmt->close();
-        $report_group = $class_order <= 3 ? 'nursery-ukg' : ($class_order <= 6 ? 'class-1-3' : ($class_order <= 8 ? 'class-4-5' : ($class_order <= 11 ? 'class-6-8' : ($class_order <= 13 ? 'class-9-10' : 'class-11-12'))));
-        $configured_subjects = array();
-        $group_stmt = $conn->prepare('SELECT subject_id FROM report_card_group_subjects WHERE group_key=? AND status=1 ORDER BY display_order');
-        $group_stmt->bind_param('s', $report_group); $group_stmt->execute(); $group_result = $group_stmt->get_result();
-        while ($group_row = $group_result->fetch_assoc()) { $configured_subjects[(int)$group_row['subject_id']] = true; }
-        $group_stmt->close();
-        if (!empty($configured_subjects)) {
-            $subjects = array_values(array_filter($subjects, function ($subject) use ($configured_subjects) {
-                return isset($configured_subjects[(int)$subject['id']]);
-            }));
+/* Apply the configured class-group list whether or not marks already exist. */
+$report_group = $class_order <= 3 ? 'nursery-ukg' : ($class_order <= 6 ? 'class-1-3' : ($class_order <= 8 ? 'class-4-5' : ($class_order <= 11 ? 'class-6-8' : ($class_order <= 13 ? 'class-9-10' : 'class-11-12'))));
+$configured_subjects = array();
+$group_stmt = $conn->prepare('SELECT subject_id FROM report_card_group_subjects WHERE group_key=? AND status=1 ORDER BY display_order');
+if ($group_stmt) {
+    $group_stmt->bind_param('s', $report_group);
+    if ($group_stmt->execute()) {
+        $group_result = $group_stmt->get_result();
+        while ($group_row = $group_result->fetch_assoc()) {
+            $configured_subjects[(int)$group_row['subject_id']] = true;
         }
     }
+    $group_stmt->close();
+}
+if (!empty($configured_subjects)) {
+    $subjects = array_values(array_filter($subjects, function ($subject) use ($configured_subjects) {
+        return isset($configured_subjects[(int)$subject['id']]);
+    }));
 }
 
 
@@ -713,6 +758,8 @@ foreach ($subjects as $subject) {
 */
 
 $studentMarks = [];
+$has_grade_only_marks = false;
+$has_numeric_marks = false;
 
 $stmt = $conn->prepare("
     SELECT
@@ -725,10 +772,16 @@ $stmt = $conn->prepare("
         m.max_marks,
         m.obtained_marks,
         m.remarks,
+        $grade_sql AS stored_grade,
         $pa_sql AS pa_marks,
         $se_sql AS se_marks,
         $nb_sql AS nb_marks,
-        $written_sql AS written_marks
+        $written_sql AS written_marks,
+        $multiple_assessment_sql AS multiple_assessment_marks,
+        $practical_sql AS practical_marks,
+        $practical_max_sql AS practical_max_marks,
+        $theory_sql AS theory_marks,
+        $theory_max_sql AS theory_max_marks
     FROM marks m
     WHERE m.class_id = ?
     AND m.section_id = ?
@@ -754,6 +807,11 @@ while ($row = $result->fetch_assoc()) {
 
     $student_id = (int)$row['student_id'];
     $subject_id = (int)$row['subject_id'];
+    if (trim((string)($row['stored_grade'] ?? '')) !== '' && (float)$row['max_marks'] <= 0) {
+        $has_grade_only_marks = true;
+    } elseif ((float)$row['max_marks'] > 0 || (float)$row['obtained_marks'] > 0) {
+        $has_numeric_marks = true;
+    }
 
     if (!isset($studentMarks[$student_id])) {
         $studentMarks[$student_id] = [];
@@ -763,6 +821,7 @@ while ($row = $result->fetch_assoc()) {
 }
 
 $stmt->close();
+$grade_only_mode = $class_order <= 8 && $has_grade_only_marks && !$has_numeric_marks;
 
 
 /*
@@ -771,30 +830,29 @@ $stmt->close();
 |--------------------------------------------------------------------------
 */
 
-$lifeSkills = [
+$cognitiveSkills = [
     'Critical Thinking',
     'Problem Solving',
-    'Communication'
+    'Decision Making'
 ];
 
-$sel = [
-    'Respect for Others',
-    'Responsibility',
-    'Honesty',
-    'Empathy'
+$socialSkills = [
+    'Civic Responsibility',
+    'Empathy',
+    'Integrity'
 ];
 
-$positiveHabits = [
-    'Work Habits',
-    'Time Management',
-    'Organization',
-    'Initiative',
-    'Perseverance'
+$aestheticDevelopment = [
+    'Awareness',
+    'Creativity',
+    'Participation',
+    'Expression'
 ];
 
-$coCurricular = [
-    'Leadership Role',
-    'Team Work Collaboration'
+$selfManagementSkills = [
+    'Coping with Stress',
+    'Coping with Emotions',
+    'Self-Care and Hygiene'
 ];
 
 
@@ -808,7 +866,7 @@ $coCurricular = [
 |
 */
 
-$default_observation = 'PF';
+$default_observation = '';
 
 
 /*
@@ -1565,11 +1623,17 @@ foreach ($scholasticSubjects as $subject) {
     $se = null;
     $nb = null;
     $written = null;
+    $multiple_assessment = null;
+    $practical = null;
+    $practical_max = null;
+    $theory = null;
+    $theory_max = null;
 
     $obtained = 0;
 
     $max_marks = 100;
 
+    $stored_grade = '';
     $remarks = '';
 
 
@@ -1594,6 +1658,9 @@ foreach ($scholasticSubjects as $subject) {
             ? trim((string)$mark['remarks'])
             : '';
 
+        $stored_grade =
+            trim((string)($mark['stored_grade'] ?? ''));
+
 
         if ($mark['pa_marks'] !== null) {
             $pa =
@@ -1614,39 +1681,66 @@ foreach ($scholasticSubjects as $subject) {
             $written =
                 (float)$mark['written_marks'];
         }
+
+        if ($mark['multiple_assessment_marks'] !== null) {
+            $multiple_assessment =
+                (float)$mark['multiple_assessment_marks'];
+        }
+
+        if ($mark['practical_marks'] !== null) {
+            $practical =
+                (float)$mark['practical_marks'];
+        }
+
+        if ($mark['practical_max_marks'] !== null) {
+            $practical_max =
+                (float)$mark['practical_max_marks'];
+        }
+
+        if ($mark['theory_marks'] !== null) {
+            $theory =
+                (float)$mark['theory_marks'];
+        }
+
+        if ($mark['theory_max_marks'] !== null) {
+            $theory_max =
+                (float)$mark['theory_max_marks'];
+        }
     }
 
-
-    /*
-    |--------------------------------------------------------------------------
-    | COMPONENT TOTAL
-    |--------------------------------------------------------------------------
-    */
-
-    $has_components =
-        (
-            $pa !== null ||
-            $se !== null ||
-            $nb !== null ||
-            $written !== null
-        );
-
-
-    if ($has_components) {
-
-        $display_obtained =
-            (float)($pa ?? 0)
-            +
-            (float)($se ?? 0)
-            +
-            (float)($nb ?? 0)
-            +
-            (float)($written ?? 0);
-
-    } else {
-
-        $display_obtained =
-            $obtained;
+    $component_values = array(
+        'pa_marks' => $pa,
+        'se_marks' => $se,
+        'nb_marks' => $nb,
+        'multiple_assessment_marks' => $multiple_assessment,
+        'written_marks' => $written,
+        'practical_marks' => $practical,
+        'theory_marks' => $theory
+    );
+    $component_maxima = array(
+        'practical_marks' => $practical_max,
+        'theory_marks' => $theory_max
+    );
+    $has_components = false;
+    $display_obtained = 0;
+    $component_max_total = 0;
+    foreach ($report_components as $component_key => $component) {
+        $component_value = $component_values[$component_key] ?? null;
+        if ($component_value !== null) {
+            $has_components = true;
+            $display_obtained += (float)$component_value;
+        }
+        if ($component['max'] !== null) {
+            $component_max_total += (float)$component['max'];
+        } elseif (isset($component_maxima[$component_key])) {
+            $component_max_total += (float)($component_maxima[$component_key] ?? 0);
+        }
+    }
+    if (!$has_components) {
+        $display_obtained = $obtained;
+    }
+    if ($has_components && $component_max_total > 0) {
+        $max_marks = $component_max_total;
     }
 
 
@@ -1655,6 +1749,10 @@ foreach ($scholasticSubjects as $subject) {
     | PERCENTAGE
     |--------------------------------------------------------------------------
     */
+
+    if ($grade_only_mode) {
+        $max_marks = 0;
+    }
 
     $percentage =
         $max_marks > 0
@@ -1665,10 +1763,9 @@ foreach ($scholasticSubjects as $subject) {
         : 0;
 
 
-    $grade =
-        gradeFromPercentage(
-            $percentage
-        );
+    $grade = $max_marks <= 0
+        ? $stored_grade
+        : gradeFromPercentage($percentage);
 
 
     /*
@@ -1707,6 +1804,12 @@ foreach ($scholasticSubjects as $subject) {
         'written' =>
             $written,
 
+        'components' =>
+            $component_values,
+
+        'component_maxima' =>
+            $component_maxima,
+
         'obtained' =>
             $display_obtained,
 
@@ -1734,16 +1837,14 @@ $overall_percentage =
     : 0;
 
 
-$overall_grade =
-    gradeFromPercentage(
-        $overall_percentage
-    );
+$overall_grade = $term_max > 0
+    ? gradeFromPercentage($overall_percentage)
+    : '—';
 
 
-$result_status =
-    resultStatus(
-        $overall_percentage
-    );
+$result_status = $term_max > 0
+    ? resultStatus($overall_percentage)
+    : 'NOT CALCULATED';
 
 ?>
 
@@ -2037,73 +2138,61 @@ Scholastic Summary For The Academic Year
 
 <tr>
 
-<th rowspan="2" class="subject">
-
-Subject
-
-</th>
-
-
-<th colspan="5">
-
-TERM-I
-
-</th>
-
-
-<?php if ($show_term2): ?>
-<th colspan="5">TERM-II</th>
+<th rowspan="<?= $class_order >= 14 ? 3 : 2; ?>" class="subject">Subject</th>
+<?php if ($grade_only_mode): ?>
+<th><?= $show_term2 ? 'TERM-I' : h($current_term); ?></th>
+<?php if ($show_term2): ?><th>TERM-II</th><?php endif; ?>
+<?php else: ?>
+<th colspan="<?= $report_component_column_count; ?>"><?= $show_term2 ? 'TERM-I' : h($current_term); ?></th>
+<?php if ($show_term2): ?><th colspan="<?= $report_component_column_count; ?>">TERM-II</th><?php endif; ?>
 <?php endif; ?>
-
 </tr>
-
 
 <tr>
-
-<th class="term-column">
-P.A.<br>(10)
-</th>
-
-<th class="term-column">
-S.E.<br>(5)
-</th>
-
-<th class="term-column">
-N.B.<br>(5)
-</th>
-
-<th class="term-column">
-Written<br>(80)
-</th>
-
-<th class="term-column">
-TOTAL<br>(100)<br>Grade
-</th>
-
-
-<?php if ($show_term2): ?><th class="term-column">
-P.A.<br>(10)
-</th>
-
-<th class="term-column">
-S.E.<br>(5)
-</th>
-
-<th class="term-column">
-N.B.<br>(5)
-</th>
-
-<th class="term-column">
-Written<br>(80)
-</th>
-
-<th class="term-column">
-TOTAL<br>(100)<br>Grade
-</th>
-
+<?php if ($grade_only_mode): ?>
+<th class="term-column">Grade</th>
+<?php if ($show_term2): ?><th class="term-column">Grade</th><?php endif; ?>
+<?php else: ?>
+<?php foreach ($report_components as $component): ?>
+<?php if ($class_order >= 14): ?>
+<th class="term-column" colspan="2"><?= h($component['label']); ?></th>
+<?php else: ?>
+<th class="term-column"><?= h($component['label']); ?><?php if ($component['max'] !== null): ?><br>(<?= cleanNumber($component['max']); ?>)<?php endif; ?></th>
+<?php endif; ?>
+<?php endforeach; ?>
+<?php if ($class_order >= 14): ?>
+<th class="term-column" colspan="3">TOTAL</th>
+<?php else: ?>
+<th class="term-column">TOTAL<br>(100)<br>Grade</th>
 <?php endif; ?>
 
+<?php if ($show_term2): ?>
+<?php foreach ($report_components as $component): ?>
+<?php if ($class_order >= 14): ?>
+<th class="term-column" colspan="2"><?= h($component['label']); ?></th>
+<?php else: ?>
+<th class="term-column"><?= h($component['label']); ?><?php if ($component['max'] !== null): ?><br>(<?= cleanNumber($component['max']); ?>)<?php endif; ?></th>
+<?php endif; ?>
+<?php endforeach; ?>
+<?php if ($class_order >= 14): ?>
+<th class="term-column" colspan="3">TOTAL</th>
+<?php else: ?>
+<th class="term-column">TOTAL<br>(100)<br>Grade</th>
+<?php endif; ?>
+<?php endif; ?>
+<?php endif; ?>
 </tr>
+
+<?php if (!$grade_only_mode && $class_order >= 14): ?>
+<tr>
+<?php foreach ($report_components as $component): ?><th class="term-column">Obt.</th><th class="term-column">Max.</th><?php endforeach; ?>
+<th class="term-column">Obt.</th><th class="term-column">Max.</th><th class="term-column">Grade</th>
+<?php if ($show_term2): ?>
+<?php foreach ($report_components as $component): ?><th class="term-column">Obt.</th><th class="term-column">Max.</th><?php endforeach; ?>
+<th class="term-column">Obt.</th><th class="term-column">Max.</th><th class="term-column">Grade</th>
+<?php endif; ?>
+</tr>
+<?php endif; ?>
 
 </thead>
 
@@ -2127,171 +2216,50 @@ TOTAL<br>(100)<br>Grade
 </td>
 
 
-<?php if ($current_term === 'TERM-I'): ?>
-
-
-<!-- TERM-I -->
-
-<td>
-
-<?= $row['pa'] !== null
-    ? cleanNumber($row['pa'])
-    : '—';
-?>
-
-</td>
-
-
-<td>
-
-<?= $row['se'] !== null
-    ? cleanNumber($row['se'])
-    : '—';
-?>
-
-</td>
-
-
-<td>
-
-<?= $row['nb'] !== null
-    ? cleanNumber($row['nb'])
-    : '—';
-?>
-
-</td>
-
-
-<td>
-
 <?php
-
-if ($row['written'] !== null) {
-
-    echo cleanNumber(
-        $row['written']
-    );
-
-} else {
-
-    echo cleanNumber(
-        $row['obtained']
-    );
-
+$has_component_value = false;
+foreach ($report_components as $component_key => $component) {
+    if (($row['components'][$component_key] ?? null) !== null) {
+        $has_component_value = true;
+        break;
+    }
 }
-
+$render_component_cells = function () use ($row, $report_components, $has_component_value, $class_order) {
+    foreach ($report_components as $component_key => $component) {
+        $value = $row['components'][$component_key] ?? null;
+        if ($value === null && !$has_component_value && $component_key === 'written_marks') {
+            $value = $row['obtained'];
+        }
+        if ($class_order >= 14) {
+            $maximum = $row['component_maxima'][$component_key] ?? null;
+            echo '<td>' . ($value !== null ? cleanNumber($value) : '-') . '</td>';
+            echo '<td>' . ($maximum !== null ? cleanNumber($maximum) : '-') . '</td>';
+        } else {
+            echo '<td>' . ($value !== null ? cleanNumber($value) : '-') . '</td>';
+        }
+    }
+    if ($class_order >= 14) {
+        echo '<td>' . cleanNumber($row['obtained']) . '</td>';
+        echo '<td>' . cleanNumber($row['max']) . '</td>';
+        echo '<td><strong>' . h($row['grade']) . '</strong></td>';
+    } else {
+        echo '<td>' . cleanNumber($row['obtained']) . '<br><strong>' . h($row['grade']) . '</strong></td>';
+    }
+};
 ?>
 
-</td>
-
-
-<td>
-
-<?= cleanNumber(
-    $row['obtained']
-); ?>
-
-<br>
-
-<strong>
-
-<?= h(
-    $row['grade']
-); ?>
-
-</strong>
-
-</td>
-
-
-<?php if ($show_term2): ?>
-<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
+<?php if ($show_term2 && $current_term === 'TERM-II'): ?>
+<?php for ($i = 0; $i < ($grade_only_mode ? 1 : $report_component_column_count); $i++): ?><td>-</td><?php endfor; ?>
 <?php endif; ?>
 
-
+<?php if ($grade_only_mode): ?>
+<td><strong><?= h($row['grade'] !== '' ? $row['grade'] : '-'); ?></strong></td>
 <?php else: ?>
-
-
-<?php if ($show_term2): ?>
-<td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>
-
-
-<!-- TERM-II -->
-
-<td>
-
-<?= $row['pa'] !== null
-    ? cleanNumber($row['pa'])
-    : '—';
-?>
-
-</td>
-
-
-<td>
-
-<?= $row['se'] !== null
-    ? cleanNumber($row['se'])
-    : '—';
-?>
-
-</td>
-
-
-<td>
-
-<?= $row['nb'] !== null
-    ? cleanNumber($row['nb'])
-    : '—';
-?>
-
-</td>
-
-
-<td>
-
-<?php
-
-if ($row['written'] !== null) {
-
-    echo cleanNumber(
-        $row['written']
-    );
-
-} else {
-
-    echo cleanNumber(
-        $row['obtained']
-    );
-
-}
-
-?>
-
-</td>
-
-
-<td>
-
-<?= cleanNumber(
-    $row['obtained']
-); ?>
-
-<br>
-
-<strong>
-
-<?= h(
-    $row['grade']
-); ?>
-
-</strong>
-
-</td>
-
-
+<?php $render_component_cells(); ?>
 <?php endif; ?>
 
+<?php if ($show_term2 && $current_term !== 'TERM-II'): ?>
+<?php for ($i = 0; $i < ($grade_only_mode ? 1 : $report_component_column_count); $i++): ?><td>-</td><?php endfor; ?>
 <?php endif; ?>
 
 
@@ -2328,6 +2296,9 @@ TOTAL MARKS
 
 </td>
 
+<?php if ($grade_only_mode): ?>
+<td colspan="<?= $show_term2 ? 2 : 1; ?>">Grades are recorded by subject.</td>
+<?php else: ?>
 
 <td style="width:15%;">
 
@@ -2352,11 +2323,7 @@ TOTAL MARKS
 
 <strong>
 
-<?= cleanNumber(
-    $overall_percentage
-); ?>
-
-%
+<?= $term_max > 0 ? cleanNumber($overall_percentage) . '%' : '—'; ?>
 
 </strong>
 
@@ -2375,6 +2342,8 @@ TOTAL MARKS
 
 </td>
 
+<?php endif; ?>
+
 </tr>
 
 </table>
@@ -2384,6 +2353,7 @@ TOTAL MARKS
      OTHER SUBJECTS
      ========================================================== -->
 
+<?php if ($class_order < 14 && !empty($otherSubjects)): ?>
 <div class="section-title">
 
 OTHER SCHOLASTIC / CO-SCHOLASTIC SUBJECTS
@@ -2400,133 +2370,30 @@ OTHER SCHOLASTIC / CO-SCHOLASTIC SUBJECTS
 
 /*
 |--------------------------------------------------------------------------
-| REQUIRED DEFAULT OTHER SUBJECTS
-|--------------------------------------------------------------------------
-*/
-
-$requiredOther = [
-
-    'COMPUTER',
-
-    'PHYSICAL EDUCATION',
-
-    'URDU',
-
-    'G.K.'
-];
-
-
-/*
-|--------------------------------------------------------------------------
-| BUILD DISPLAY
+| BUILD DISPLAY FROM THE SELECTED CLASS GROUP
 |--------------------------------------------------------------------------
 */
 
 $otherDisplay = [];
 
 
-foreach ($requiredOther as $requiredName) {
-
-    $found = false;
-
-    foreach ($otherSubjects as $subject) {
-
-        $subjectName =
-            strtoupper(
-                trim(
-                    $subject['subject_name']
-                )
+foreach ($otherSubjects as $subject) {
+    $subjectName = trim($subject['subject_name']);
+    $sid = (int)$subject['id'];
+    $mark = $marksForStudent[$sid] ?? null;
+    $grade = '';
+    if ($mark) {
+        $grade = trim((string)($mark['stored_grade'] ?? $mark['remarks'] ?? ''));
+        if ($grade === '' && (float)$mark['max_marks'] > 0) {
+            $grade = gradeFromPercentage(
+                ((float)$mark['obtained_marks'] / (float)$mark['max_marks']) * 100
             );
-
-        if (
-            $subjectName ===
-            strtoupper($requiredName)
-        ) {
-
-            $sid =
-                (int)$subject['id'];
-
-            $mark =
-                isset(
-                    $marksForStudent[$sid]
-                )
-                ? $marksForStudent[$sid]
-                : null;
-
-
-            $grade = '';
-
-
-            if ($mark) {
-
-                $grade =
-                    trim(
-                        (string)(
-                            $mark['remarks']
-                            ?? ''
-                        )
-                    );
-
-
-                if (
-                    $grade === ''
-                ) {
-
-                    $obt =
-                        (float)(
-                            $mark[
-                                'obtained_marks'
-                            ]
-                        );
-
-                    $max =
-                        (float)(
-                            $mark[
-                                'max_marks'
-                            ]
-                        );
-
-                    if ($max > 0) {
-
-                        $grade =
-                            gradeFromPercentage(
-                                (
-                                    $obt /
-                                    $max
-                                ) * 100
-                            );
-                    }
-                }
-            }
-
-
-            $otherDisplay[] = [
-
-                'name' =>
-                    $requiredName,
-
-                'grade' =>
-                    $grade
-            ];
-
-            $found = true;
-
-            break;
         }
     }
-
-
-    if (!$found) {
-
-        $otherDisplay[] = [
-
-            'name' =>
-                $requiredName,
-
-            'grade' =>
-                ''
-        ];
-    }
+    $otherDisplay[] = array(
+        'name' => $subjectName,
+        'grade' => $grade
+    );
 }
 
 
@@ -2561,16 +2428,17 @@ foreach ($otherDisplay as $item):
 
 
 <div class="observation-grid">
+<?php if ($class_order <= 13): ?>
 
 <div class="observation-panel">
 
 <!-- ==========================================================
-     LIFE SKILLS
+     COGNITIVE SKILLS
      ========================================================== -->
 
 <div class="section-title">
 
-LIFE SKILLS
+COGNITIVE SKILLS
 
 </div>
 
@@ -2596,7 +2464,7 @@ TERM-II
 </tr>
 
 
-<?php foreach ($lifeSkills as $item): ?>
+<?php foreach ($cognitiveSkills as $item): ?>
 
 <tr>
 
@@ -2635,7 +2503,7 @@ TERM-II
 
 <div class="section-title">
 
-SOCIAL EMOTIONAL &amp; ETHICAL LEARNING
+SOCIAL SKILLS
 
 </div>
 
@@ -2661,7 +2529,7 @@ TERM-II
 </tr>
 
 
-<?php foreach ($sel as $item): ?>
+<?php foreach ($socialSkills as $item): ?>
 
 <tr>
 
@@ -2695,12 +2563,12 @@ TERM-II
 <div class="observation-panel">
 
 <!-- ==========================================================
-     POSITIVE LEARNING HABITS
+     AESTHETIC &amp; CULTURAL DEVELOPMENT
      ========================================================== -->
 
 <div class="section-title">
 
-POSITIVE LEARNING HABITS
+AESTHETIC &amp; CULTURAL DEVELOPMENT
 
 </div>
 
@@ -2726,7 +2594,7 @@ TERM-II
 </tr>
 
 
-<?php foreach ($positiveHabits as $item): ?>
+<?php foreach ($aestheticDevelopment as $item): ?>
 
 <tr>
 
@@ -2765,7 +2633,7 @@ TERM-II
 
 <div class="section-title">
 
-CO-CURRICULAR ACTIVITIES
+SELF-MANAGEMENT SKILLS
 
 </div>
 
@@ -2791,7 +2659,7 @@ TERM-II
 </tr>
 
 
-<?php foreach ($coCurricular as $item): ?>
+<?php foreach ($selfManagementSkills as $item): ?>
 
 <tr>
 
@@ -2821,8 +2689,11 @@ TERM-II
 </table>
 
 </div>
-
 </div>
+</div>
+<?php endif; ?>
+
+<?php endif; ?>
 
 <!-- ==========================================================
      FINAL RESULT
@@ -2843,11 +2714,7 @@ Overall Percentage
 
 <td style="width:20%;">
 
-<?= cleanNumber(
-    $overall_percentage
-); ?>
-
-%
+<?= $term_max > 0 ? cleanNumber($overall_percentage) . '%' : '—'; ?>
 
 </td>
 
