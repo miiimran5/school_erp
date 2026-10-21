@@ -1,6 +1,8 @@
 <?php
 require_once '../../config/config.php';
 require_once '../../config/database.php';
+require_once '../../includes/access.php';
+access_require_roles(array('Admin'));
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -25,7 +27,43 @@ function exam_type_e($value)
 $message = '';
 $error = '';
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'delete') {
+    $id = (int)($_POST['type_id'] ?? 0);
+    if ($id <= 0) {
+        $error = 'Select a valid exam type to delete.';
+    } else {
+        $stmt = $conn->prepare('SELECT COUNT(*) AS total FROM exams WHERE exam_type_id=?');
+        if (!$stmt) {
+            $error = 'Unable to check exam type usage: ' . $conn->error;
+        } else {
+            $stmt->bind_param('i', $id);
+            if (!$stmt->execute()) {
+                $error = 'Unable to check exam type usage: ' . $stmt->error;
+                $references = 0;
+            } else {
+                $result = $stmt->get_result();
+                $references = (int)($result ? ($result->fetch_assoc()['total'] ?? 0) : 0);
+            }
+            $stmt->close();
+        }
+        if ($error === '' && $references > 0) {
+            $error = 'This exam type is used by ' . $references . ' examination(s). Delete or reassign those examinations before removing this type.';
+        } elseif ($error === '') {
+            $stmt = $conn->prepare('DELETE FROM exam_types WHERE id=?');
+            if (!$stmt) {
+                $error = 'Unable to prepare exam type deletion: ' . $conn->error;
+            } else {
+                $stmt->bind_param('i', $id);
+                if ($stmt->execute() && $stmt->affected_rows === 1) {
+                    header('Location: types.php?deleted=1');
+                    exit;
+                }
+                $error = 'Unable to delete exam type: ' . $stmt->error;
+                $stmt->close();
+            }
+        }
+    }
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST['action'] === 'add')) {
     $type_name = trim((string)($_POST['type_name'] ?? ''));
     $max_marks = (int)($_POST['max_marks'] ?? 100);
 
@@ -51,24 +89,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
-if (isset($_GET['toggle']) && ctype_digit((string)$_GET['toggle'])) {
-    $id = (int)$_GET['toggle'];
-    $stmt = $conn->prepare('UPDATE exam_types SET status = IF(status = 1, 0, 1) WHERE id = ?');
-    if ($stmt) {
-        $stmt->bind_param('i', $id);
-        $stmt->execute();
-        $stmt->close();
-        header('Location: types.php?updated=1');
-        exit;
-    }
-}
-
-if (isset($_GET['updated'])) {
-    $message = 'Exam type status updated.';
+if (isset($_GET['deleted'])) {
+    $message = 'Exam type deleted successfully.';
 }
 
 $types = array();
-$result = $conn->query('SELECT id, exam_type_name, max_marks, status FROM exam_types ORDER BY id');
+$result = $conn->query('SELECT et.id, et.exam_type_name, et.max_marks, et.status, COUNT(e.id) AS exam_count FROM exam_types et LEFT JOIN exams e ON e.exam_type_id=et.id GROUP BY et.id, et.exam_type_name, et.max_marks, et.status ORDER BY et.id');
 if ($result) {
     while ($row = $result->fetch_assoc()) {
         $types[] = $row;
@@ -91,6 +117,7 @@ if ($result) {
                         <form method="post">
                             <div class="form-group"><label for="type_name">Exam Type Name</label><input id="type_name" name="type_name" class="form-control" placeholder="Example: PA-1 or Term-1" maxlength="100" required></div>
                             <div class="form-group"><label for="max_marks">Maximum Marks</label><input id="max_marks" name="max_marks" type="number" min="1" max="1000" class="form-control" value="100" required></div>
+                            <input type="hidden" name="action" value="add">
                             <button class="btn btn-success" type="submit"><i class="fas fa-plus"></i> Add Exam Type</button>
                             <a class="btn btn-secondary" href="index.php">Back to Marks Entry</a>
                         </form>
@@ -98,9 +125,9 @@ if ($result) {
                 </div>
             </div>
             <div class="col-md-7">
-                <div class="card"><div class="card-header bg-info text-white">Available Exam Types</div><div class="card-body p-0"><div class="table-responsive"><table class="table table-bordered mb-0"><thead><tr><th>Order</th><th>Name</th><th>Maximum Marks</th><th>Status</th><th>Action</th></tr></thead><tbody>
-                <?php foreach ($types as $type): ?><tr><td><?= (int)$type['id']; ?></td><td><?= exam_type_e($type['exam_type_name']); ?></td><td><?= (int)$type['max_marks']; ?></td><td><?= (int)$type['status'] === 1 ? '<span class="badge badge-success">Active</span>' : '<span class="badge badge-secondary">Inactive</span>'; ?></td><td><a class="btn btn-sm btn-warning" href="?toggle=<?= (int)$type['id']; ?>"><?= (int)$type['status'] === 1 ? 'Disable' : 'Enable'; ?></a></td></tr><?php endforeach; ?>
-                <?php if (empty($types)): ?><tr><td colspan="4" class="text-center text-muted">No exam types found.</td></tr><?php endif; ?>
+                <div class="card"><div class="card-header bg-info text-white">Available Exam Types</div><div class="card-body p-0"><div class="table-responsive"><table class="table table-bordered mb-0"><thead><tr><th>Order</th><th>Name</th><th>Maximum Marks</th><th>Examinations Using Type</th><th>Action</th></tr></thead><tbody>
+                <?php foreach ($types as $type): ?><tr><td><?= (int)$type['id']; ?></td><td><?= exam_type_e($type['exam_type_name']); ?></td><td><?= (int)$type['max_marks']; ?></td><td><?= (int)$type['exam_count']; ?></td><td><?php if ((int)$type['exam_count'] === 0): ?><form method="post" onsubmit="return confirm('Permanently delete this exam type?');"><input type="hidden" name="action" value="delete"><input type="hidden" name="type_id" value="<?= (int)$type['id']; ?>"><button class="btn btn-sm btn-danger" type="submit"><i class="fas fa-trash"></i> Delete</button></form><?php else: ?><button class="btn btn-sm btn-secondary" disabled title="This type is used by an examination">In Use</button><?php endif; ?></td></tr><?php endforeach; ?>
+                <?php if (empty($types)): ?><tr><td colspan="5" class="text-center text-muted">No exam types found.</td></tr><?php endif; ?>
                 </tbody></table></div></div></div>
             </div>
         </div>

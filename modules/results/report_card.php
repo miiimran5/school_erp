@@ -329,16 +329,38 @@ while ($row = $marks_result->fetch_assoc()) {
 
 $marks_stmt->close();
 
-$group_order_stmt = $conn->prepare('SELECT class_order FROM classes WHERE id=?');
-$group_order_stmt->bind_param('i', $class_id); $group_order_stmt->execute();
-$group_order = (int)($group_order_stmt->get_result()->fetch_assoc()['class_order'] ?? 0); $group_order_stmt->close();
-$report_group = $group_order <= 3 ? 'nursery-ukg' : ($group_order <= 6 ? 'class-1-3' : ($group_order <= 8 ? 'class-4-5' : ($group_order <= 11 ? 'class-6-8' : ($group_order <= 13 ? 'class-9-10' : 'class-11-12'))));
 $configured_ids = array();
-$group_stmt = $conn->prepare('SELECT subject_id FROM report_card_group_subjects WHERE group_key=? AND status=1');
-$group_stmt->bind_param('s', $report_group); $group_stmt->execute(); $group_result = $group_stmt->get_result();
-while ($group_row = $group_result->fetch_assoc()) { $configured_ids[(int)$group_row['subject_id']] = true; }
-$group_stmt->close();
-if (!empty($configured_ids)) {
+$class_setting_stmt = $conn->prepare('SELECT 1 FROM report_card_class_settings WHERE class_id=?');
+$class_setting_stmt->bind_param('i', $class_id);
+$class_setting_stmt->execute();
+$has_class_subject_config = $class_setting_stmt->get_result()->num_rows > 0;
+$class_setting_stmt->close();
+if ($has_class_subject_config) {
+    $class_subject_stmt = $conn->prepare('SELECT subject_id FROM report_card_class_subjects WHERE class_id=?');
+    $class_subject_stmt->bind_param('i', $class_id);
+    $class_subject_stmt->execute();
+    $class_subject_result = $class_subject_stmt->get_result();
+    while ($class_subject_row = $class_subject_result->fetch_assoc()) {
+        $configured_ids[(int)$class_subject_row['subject_id']] = true;
+    }
+    $class_subject_stmt->close();
+} else {
+    $group_order_stmt = $conn->prepare('SELECT class_order FROM classes WHERE id=?');
+    $group_order_stmt->bind_param('i', $class_id);
+    $group_order_stmt->execute();
+    $group_order = (int)($group_order_stmt->get_result()->fetch_assoc()['class_order'] ?? 0);
+    $group_order_stmt->close();
+    $report_group = $group_order <= 3 ? 'nursery-ukg' : ($group_order <= 6 ? 'class-1-3' : ($group_order <= 8 ? 'class-4-5' : ($group_order <= 11 ? 'class-6-8' : ($group_order <= 13 ? 'class-9-10' : 'class-11-12'))));
+    $group_stmt = $conn->prepare('SELECT subject_id FROM report_card_group_subjects WHERE group_key=? AND status=1');
+    $group_stmt->bind_param('s', $report_group);
+    $group_stmt->execute();
+    $group_result = $group_stmt->get_result();
+    while ($group_row = $group_result->fetch_assoc()) {
+        $configured_ids[(int)$group_row['subject_id']] = true;
+    }
+    $group_stmt->close();
+}
+if ($has_class_subject_config || !empty($configured_ids)) {
     $marks = array_values(array_filter($marks, function ($mark) use ($configured_ids) {
         return isset($configured_ids[(int)$mark['subject_id']]);
     }));
@@ -374,19 +396,18 @@ foreach ($marks as &$mark) {
     $mark['percentage'] =
         $percentage;
 
-    $mark['grade'] = $mark['display_grade'];
-
-    /*
-     * Subject pass/fail
-     */
-
     if (!empty($mark['grade']) && $max <= 0) {
-        $mark['result'] = 'PASS';
         $mark['display_grade'] = $mark['grade'];
+        $mark['percentage'] = null;
+        $mark['result'] = $mark['grade'] === 'E' ? 'FAIL' : 'PASS';
+        if ($mark['result'] === 'FAIL') {
+            $failed_subjects++;
+        }
         $subject_count++;
         continue;
     }
     $mark['display_grade'] = getGrade($percentage);
+    $mark['grade'] = $mark['display_grade'];
     if ($percentage < 33) {
 
         $mark['result'] = 'FAIL';
@@ -412,7 +433,7 @@ unset($mark);
    OVERALL CALCULATIONS
    ========================================================= */
 
-$overall_percentage = 0;
+$overall_percentage = null;
 
 if ($total_max > 0) {
 
@@ -420,8 +441,7 @@ if ($total_max > 0) {
         ($total_obtained / $total_max) * 100;
 }
 
-$overall_grade =
-    getGrade($overall_percentage);
+$overall_grade = $total_max > 0 ? getGrade($overall_percentage) : ($subject_count > 0 ? 'Graded' : 'N/A');
 
 
 /*
@@ -1290,30 +1310,21 @@ if (!empty($student['photo'])) {
 
                     <td>
 
-                        <?= number_format(
-                            $mark['max_marks'],
-                            2
-                        ); ?>
+                        <?= (float)$mark['max_marks'] > 0 ? number_format((float)$mark['max_marks'], 2) : '-'; ?>
 
                     </td>
 
 
                     <td>
 
-                        <?= number_format(
-                            $mark['obtained_marks'],
-                            2
-                        ); ?>
+                        <?= (float)$mark['max_marks'] > 0 ? number_format((float)$mark['obtained_marks'], 2) : '-'; ?>
 
                     </td>
 
 
                     <td>
 
-                        <?= number_format(
-                            $mark['percentage'],
-                            2
-                        ); ?>%
+                        <?= $mark['percentage'] === null ? '-' : number_format((float)$mark['percentage'], 2) . '%'; ?>
 
                     </td>
 
@@ -1381,28 +1392,19 @@ if (!empty($student['photo'])) {
 
                 <th>
 
-                    <?= number_format(
-                        $total_max,
-                        2
-                    ); ?>
+                    <?= $total_max > 0 ? number_format($total_max, 2) : '-'; ?>
 
                 </th>
 
                 <th>
 
-                    <?= number_format(
-                        $total_obtained,
-                        2
-                    ); ?>
+                    <?= $total_max > 0 ? number_format($total_obtained, 2) : '-'; ?>
 
                 </th>
 
                 <th>
 
-                    <?= number_format(
-                        $overall_percentage,
-                        2
-                    ); ?>%
+                    <?= $overall_percentage === null ? '-' : number_format((float)$overall_percentage, 2) . '%'; ?>
 
                 </th>
 

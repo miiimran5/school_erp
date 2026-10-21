@@ -10,7 +10,7 @@ require_once __DIR__ . '/school.php';
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
-<title><?= school_e(school_setting('school_name', APP_NAME)); ?> - <?= school_e(school_setting('school_tagline', 'School ERP')); ?></title>
+<title><?= school_e(school_setting('app_name', APP_NAME)); ?> - <?= school_e(school_setting('school_name', APP_NAME)); ?></title>
 
 <link rel="stylesheet" href="<?= BASE_URL; ?>/assets/plugins/fontawesome-free/css/all.min.css">
 

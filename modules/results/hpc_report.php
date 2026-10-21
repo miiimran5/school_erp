@@ -55,6 +55,18 @@ function e($value)
     );
 }
 
+function observationGradeLabel($value)
+{
+    $grade = strtoupper(trim((string)$value));
+    if ($grade === 'AD') {
+        return 'Ad';
+    }
+    if ($grade === 'PF') {
+        return 'Pf';
+    }
+    return $grade;
+}
+
 
 /* ============================================================
    GRADE FUNCTION
@@ -542,47 +554,39 @@ $stmt->close();
 
 $observation_categories = [
 
-    'Life Skills' => [
+    'Cognitive Skills' => [
 
         'Critical Thinking',
 
         'Problem Solving',
 
-        'Communication'
+        'Decision Making'
     ],
 
 
-    'Social Emotional Ethics Learning' => [
+    'Social and Interpersonal Skills' => [
 
-        'Respect for Others',
+        'Civic Responsibility',
 
-        'Responsibility',
-
-        'Honesty',
-
-        'Empathy'
+        'Empathy',
+        'Integrity'
     ],
 
 
-    'Positive Learning Habits' => [
+    'Aesthetic and Cultural Development' => [
 
-        'Work Habits',
-
-        'Time Management',
-
-        'Organization',
-
-        'Initiative',
-
-        'Perseverance'
+        'Awareness',
+        'Creativity',
+        'Participation',
+        'Expression'
     ],
 
 
-    'Co-Curricular Activities' => [
+    'Self-Management Skills' => [
 
-        'Leadership Role',
-
-        'Team Work Collaboration'
+        'Coping With Stress',
+        'Coping With Emotions',
+        'Self-Care and Hygiene'
     ]
 ];
 
@@ -630,14 +634,14 @@ foreach ($observations as $category => $rows) {
                 [$observation]
                 ['term1']
                 =
-                $row['term1_value'];
+                observationGradeLabel($row['term1_value']);
 
             $observation_values
                 [$category]
                 [$observation]
                 ['term2']
                 =
-                $row['term2_value'];
+                observationGradeLabel($row['term2_value']);
         }
     }
 }
@@ -2283,7 +2287,7 @@ $term2 =
 
 
 <!-- =========================================================
-     LIFE SKILLS
+     COGNITIVE SKILLS
      ========================================================= -->
 
 <div class="section-title">
@@ -2313,7 +2317,7 @@ $term2 =
 
 
 <?php foreach (
-    $observation_categories['Life Skills']
+    $observation_categories['Cognitive Skills']
     as $item
 ): ?>
 
@@ -2327,7 +2331,7 @@ $term2 =
 
         <?= e(
             $observation_values
-                ['Life Skills']
+                ['Cognitive Skills']
                 [$item]
                 ['term1']
         ); ?>
@@ -2338,7 +2342,7 @@ $term2 =
 
         <?= e(
             $observation_values
-                ['Life Skills']
+                ['Cognitive Skills']
                 [$item]
                 ['term2']
         ); ?>
@@ -2359,7 +2363,7 @@ $term2 =
 
 <div class="section-title">
 
-    SOCIAL EMOTIONAL & ETHICAL LEARNING
+    SOCIAL AND INTERPERSONAL SKILLS
 
 </div>
 
@@ -2385,7 +2389,7 @@ $term2 =
 
 <?php foreach (
     $observation_categories
-        ['Social Emotional Ethics Learning']
+        ['Social and Interpersonal Skills']
     as $item
 ): ?>
 
@@ -2399,7 +2403,7 @@ $term2 =
 
         <?= e(
             $observation_values
-                ['Social Emotional Ethics Learning']
+                ['Social and Interpersonal Skills']
                 [$item]
                 ['term1']
         ); ?>
@@ -2410,7 +2414,7 @@ $term2 =
 
         <?= e(
             $observation_values
-                ['Social Emotional Ethics Learning']
+                ['Social and Interpersonal Skills']
                 [$item]
                 ['term2']
         ); ?>
@@ -2426,12 +2430,12 @@ $term2 =
 
 
 <!-- =========================================================
-     POSITIVE LEARNING HABITS
+     AESTHETIC AND CULTURAL DEVELOPMENT
      ========================================================= -->
 
 <div class="section-title">
 
-    POSITIVE LEARNING HABITS
+    AESTHETIC AND CULTURAL DEVELOPMENT
 
 </div>
 
@@ -2457,7 +2461,7 @@ $term2 =
 
 <?php foreach (
     $observation_categories
-        ['Positive Learning Habits']
+        ['Aesthetic and Cultural Development']
     as $item
 ): ?>
 
@@ -2471,7 +2475,7 @@ $term2 =
 
         <?= e(
             $observation_values
-                ['Positive Learning Habits']
+                ['Aesthetic and Cultural Development']
                 [$item]
                 ['term1']
         ); ?>
@@ -2482,7 +2486,7 @@ $term2 =
 
         <?= e(
             $observation_values
-                ['Positive Learning Habits']
+                ['Aesthetic and Cultural Development']
                 [$item]
                 ['term2']
         ); ?>
@@ -2498,12 +2502,12 @@ $term2 =
 
 
 <!-- =========================================================
-     CO-CURRICULAR
+     SELF-MANAGEMENT SKILLS
      ========================================================= -->
 
 <div class="section-title">
 
-    CO-CURRICULAR ACTIVITIES
+    SELF-MANAGEMENT SKILLS
 
 </div>
 
@@ -2529,7 +2533,7 @@ $term2 =
 
 <?php foreach (
     $observation_categories
-        ['Co-Curricular Activities']
+        ['Self-Management Skills']
     as $item
 ): ?>
 
@@ -2547,7 +2551,7 @@ $term2 =
 
         <?= e(
             $observation_values
-                ['Co-Curricular Activities']
+                ['Self-Management Skills']
                 [$item]
                 ['term1']
         ); ?>
@@ -2558,7 +2562,7 @@ $term2 =
 
         <?= e(
             $observation_values
-                ['Co-Curricular Activities']
+                ['Self-Management Skills']
                 [$item]
                 ['term2']
         ); ?>

@@ -658,20 +658,45 @@ if (count($subjects) === 0) {
             $subjects[] = $row;
         }
 
-        /* Respect the administrator's manual subject list for each report-card group. */
-        $class_order_stmt = $conn->prepare('SELECT class_order FROM classes WHERE id=?');
-        $class_order_stmt->bind_param('i', $class_id); $class_order_stmt->execute();
-        $class_order = (int)($class_order_stmt->get_result()->fetch_assoc()['class_order'] ?? 0); $class_order_stmt->close();
-        $report_group = $class_order <= 3 ? 'nursery-ukg' : ($class_order <= 6 ? 'class-1-3' : ($class_order <= 8 ? 'class-4-5' : ($class_order <= 11 ? 'class-6-8' : ($class_order <= 13 ? 'class-9-10' : 'class-11-12'))));
         $configured_subjects = array();
-        $group_stmt = $conn->prepare('SELECT subject_id FROM report_card_group_subjects WHERE group_key=? AND status=1 ORDER BY display_order');
-        $group_stmt->bind_param('s', $report_group); $group_stmt->execute(); $group_result = $group_stmt->get_result();
-        while ($group_row = $group_result->fetch_assoc()) { $configured_subjects[(int)$group_row['subject_id']] = true; }
-        $group_stmt->close();
-        if (!empty($configured_subjects)) {
+        $class_setting_stmt = $conn->prepare('SELECT 1 FROM report_card_class_settings WHERE class_id=?');
+        $class_setting_stmt->bind_param('i', $class_id);
+        $class_setting_stmt->execute();
+        $has_class_subject_config = $class_setting_stmt->get_result()->num_rows > 0;
+        $class_setting_stmt->close();
+        if ($has_class_subject_config) {
+            $class_subject_stmt = $conn->prepare('SELECT subject_id FROM report_card_class_subjects WHERE class_id=? ORDER BY display_order, id');
+            $class_subject_stmt->bind_param('i', $class_id);
+            $class_subject_stmt->execute();
+            $class_subject_result = $class_subject_stmt->get_result();
+            while ($class_subject_row = $class_subject_result->fetch_assoc()) {
+                $configured_subjects[(int)$class_subject_row['subject_id']] = true;
+            }
+            $class_subject_stmt->close();
             $subjects = array_values(array_filter($subjects, function ($subject) use ($configured_subjects) {
                 return isset($configured_subjects[(int)$subject['id']]);
             }));
+        } else {
+            /* Preserve existing group-level selections for classes without an individual override. */
+            $class_order_stmt = $conn->prepare('SELECT class_order FROM classes WHERE id=?');
+            $class_order_stmt->bind_param('i', $class_id);
+            $class_order_stmt->execute();
+            $class_order = (int)($class_order_stmt->get_result()->fetch_assoc()['class_order'] ?? 0);
+            $class_order_stmt->close();
+            $report_group = $class_order <= 3 ? 'nursery-ukg' : ($class_order <= 6 ? 'class-1-3' : ($class_order <= 8 ? 'class-4-5' : ($class_order <= 11 ? 'class-6-8' : ($class_order <= 13 ? 'class-9-10' : 'class-11-12'))));
+            $group_stmt = $conn->prepare('SELECT subject_id FROM report_card_group_subjects WHERE group_key=? AND status=1 ORDER BY display_order');
+            $group_stmt->bind_param('s', $report_group);
+            $group_stmt->execute();
+            $group_result = $group_stmt->get_result();
+            while ($group_row = $group_result->fetch_assoc()) {
+                $configured_subjects[(int)$group_row['subject_id']] = true;
+            }
+            $group_stmt->close();
+            if ($configured_subjects) {
+                $subjects = array_values(array_filter($subjects, function ($subject) use ($configured_subjects) {
+                    return isset($configured_subjects[(int)$subject['id']]);
+                }));
+            }
         }
     }
 }

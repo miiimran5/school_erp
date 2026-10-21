@@ -1,8 +1,10 @@
 <?php
 require_once '../../config/config.php'; require_once '../../config/database.php'; require_once '../../includes/access.php';
-access_require_roles(array('Admin','Teacher')); $conn->set_charset('utf8mb4');
+access_require_roles(array('Admin','Teacher','Student')); $conn->set_charset('utf8mb4');
 function student_reports_e($v){return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8');}
 $student_id=(int)($_GET['student_id']??0);$stmt=$conn->prepare('SELECT s.student_name,s.admission_no,s.class_id,s.section_id,c.class_name,sec.section_name FROM students s JOIN classes c ON c.id=s.class_id JOIN sections sec ON sec.id=s.section_id WHERE s.id=? AND s.status=1');$stmt->bind_param('i',$student_id);$stmt->execute();$student=$stmt->get_result()->fetch_assoc();$stmt->close();if(!$student){http_response_code(404);exit('Student not found.');}
+if(access_is_student()&&$student_id!==access_student_id()){http_response_code(403);exit('You can only view your own report cards.');}
+if(access_is_teacher()&&!access_teacher_can_class($conn,(int)$student['class_id'],(int)$student['section_id'])){http_response_code(403);exit('You can only view report cards for assigned classes.');}
 $exams=array();$q=$conn->query('SELECT id,exam_name FROM exams WHERE status=1 ORDER BY id DESC');while($q&&($x=$q->fetch_assoc()))$exams[]=$x;
 ?>
 <?php include '../../includes/header.php';include '../../includes/navbar.php';include '../../includes/sidebar.php';?>

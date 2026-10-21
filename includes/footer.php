@@ -3,7 +3,7 @@
 
     <strong>
         Copyright &copy; 2026
-        <?= school_e(school_setting('school_name', APP_NAME)); ?>.
+        <?= school_e(school_setting('app_name', APP_NAME)); ?>.
     </strong>
 
     <div class="float-right d-none d-sm-inline-block">

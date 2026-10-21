@@ -17,12 +17,14 @@
 
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/db_connect.php';
+require_once __DIR__ . '/../../includes/access.php';
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     die("Database connection not available.");
 }
 
 $conn->set_charset("utf8mb4");
+access_require_roles(array('Admin', 'Teacher'));
 
 /* ---------------------------------------------------------
    Helper
@@ -250,6 +252,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                         if (!$student) {
                             $errors[] =
                                 "Admission No. {$admission_no}: student not found.";
+                            continue;
+                        }
+                        if (access_is_teacher() && !access_teacher_can_class($conn, (int)$student['class_id'], (int)$student['section_id'])) {
+                            $errors[] = "Admission No. {$admission_no}: you are not assigned to this student's class and section.";
                             continue;
                         }
 
@@ -570,9 +576,35 @@ $student_id = isset($_GET['student_id'])
     ? (int)$_GET['student_id']
     : 0;
 
+$student_access_allowed = true;
+if ($student_id > 0) {
+    $access_stmt = $conn->prepare('SELECT class_id, section_id FROM students WHERE id=? AND status=1 LIMIT 1');
+    if (!$access_stmt) {
+        die('Unable to verify student access: ' . h($conn->error));
+    }
+    $access_stmt->bind_param('i', $student_id);
+    if (!$access_stmt->execute()) {
+        die('Unable to verify student access: ' . h($access_stmt->error));
+    }
+    $access_student = $access_stmt->get_result()->fetch_assoc();
+    $access_stmt->close();
+    $student_access_allowed = $access_student
+        && (!access_is_teacher() || access_teacher_can_class($conn, (int)$access_student['class_id'], (int)$access_student['section_id']));
+    if (!$student_access_allowed) {
+        http_response_code(403);
+        exit('You are not allowed to access this student record.');
+    }
+}
+
 $session_id = 1;
 $observation_term = (isset($_GET['term']) && $_GET['term'] === 'term2') ? 'term2' : 'term1';
 $observation_values = array();
+$observation_catalog = array(
+    'Cognitive Skills' => array('Critical Thinking', 'Problem Solving', 'Decision Making'),
+    'Social and Interpersonal Skills' => array('Civic Responsibility', 'Empathy', 'Integrity'),
+    'Aesthetic and Cultural Development' => array('Awareness', 'Creativity', 'Participation', 'Expression'),
+    'Self-Management Skills' => array('Coping With Stress', 'Coping With Emotions', 'Self-Care and Hygiene')
+);
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_observations') {
     $post_student_id = (int)($_POST['student_id'] ?? 0);
@@ -582,28 +614,65 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'save_
     if ($post_student_id <= 0 || empty($posted_observations)) {
         $error_message = 'Select a student and enter at least one co-scholastic value.';
     } else {
+        $student_scope_stmt = $conn->prepare('SELECT class_id, section_id FROM students WHERE id=? AND status=1 LIMIT 1');
+        if (!$student_scope_stmt) {
+            $error_message = 'Unable to verify the selected student: ' . $conn->error;
+        } else {
+            $student_scope_stmt->bind_param('i', $post_student_id);
+            if (!$student_scope_stmt->execute()) {
+                $error_message = 'Unable to verify the selected student: ' . $student_scope_stmt->error;
+            } else {
+                $student_scope = $student_scope_stmt->get_result()->fetch_assoc();
+                if (!$student_scope || (access_is_teacher() && !access_teacher_can_class($conn, (int)$student_scope['class_id'], (int)$student_scope['section_id']))) {
+                    $error_message = 'You are not allowed to enter co-scholastic values for this student.';
+                }
+            }
+            $student_scope_stmt->close();
+        }
+    }
+    if ($error_message === '') {
         $column = $post_term === 'term2' ? 'term2_value' : 'term1_value';
-        $conn->begin_transaction();
+        if (!$conn->begin_transaction()) {
+            $error_message = 'Unable to start saving co-scholastic values: ' . $conn->error;
+        }
+    }
+    if ($error_message === '') {
         $ok = true;
         $stmt = $conn->prepare("INSERT INTO hpc_observations (student_id, session_id, category, observation, {$column}) VALUES (?, ?, ?, ?, ?) ON DUPLICATE KEY UPDATE {$column}=VALUES({$column})");
-        foreach ($posted_observations as $category => $items) {
-            if (!is_array($items)) continue;
-            foreach ($items as $observation => $value) {
-                $value = strtoupper(trim((string)$value));
-                if ($value !== '' && !in_array($value, array('B', 'PF', 'PG'), true)) { $ok = false; break 2; }
-                $stmt->bind_param('iisss', $post_student_id, $post_session_id, $category, $observation, $value);
-                if (!$stmt->execute()) { $ok = false; break 2; }
+        if (!$stmt) {
+            $conn->rollback();
+            $error_message = 'Unable to prepare co-scholastic save: ' . $conn->error;
+        } else {
+            foreach ($posted_observations as $category => $items) {
+                if (!isset($observation_catalog[$category]) || !is_array($items)) {
+                    $ok = false;
+                    break;
+                }
+                foreach ($items as $observation => $value) {
+                    $value = strtoupper(trim((string)$value));
+                    if (!in_array($observation, $observation_catalog[$category], true)
+                        || ($value !== '' && !in_array($value, array('B', 'PF', 'AD'), true))) {
+                        $ok = false;
+                        break 2;
+                    }
+                    $stmt->bind_param('iisss', $post_student_id, $post_session_id, $category, $observation, $value);
+                    if (!$stmt->execute()) { $ok = false; break 2; }
+                }
+            }
+            $stmt->close();
+            if ($ok && $conn->commit()) {
+                $success_message = strtoupper($post_term) . ' co-scholastic values saved successfully.';
+            } else {
+                $conn->rollback();
+                $error_message = 'Unable to save co-scholastic values. Please use Ad, Pf, or B.';
             }
         }
-        $stmt->close();
-        if ($ok) { $conn->commit(); $success_message = strtoupper($post_term) . ' co-scholastic values saved successfully.'; }
-        else { $conn->rollback(); $error_message = 'Unable to save co-scholastic values.'; }
         $student_id = $post_student_id;
         $observation_term = $post_term;
     }
 }
 
-if ($student_id > 0) {
+if ($student_id > 0 && $student_access_allowed) {
     $stmt = $conn->prepare('SELECT category, observation, term1_value, term2_value FROM hpc_observations WHERE student_id=? AND session_id=?');
     $stmt->bind_param('ii', $student_id, $session_id);
     $stmt->execute();
@@ -619,7 +688,8 @@ if ($student_id > 0) {
 --------------------------------------------------------- */
 $students = [];
 
-if ($class_id > 0 && $section_id > 0) {
+if ($class_id > 0 && $section_id > 0
+    && (!access_is_teacher() || access_teacher_can_class($conn, $class_id, $section_id))) {
 
     $stmt = $conn->prepare(
         "SELECT id, admission_no, student_name
@@ -655,7 +725,7 @@ if ($class_id > 0 && $section_id > 0) {
 --------------------------------------------------------- */
 $selected_student = null;
 
-if ($student_id > 0) {
+if ($student_id > 0 && $student_access_allowed) {
 
     $stmt = $conn->prepare(
         "SELECT
@@ -775,7 +845,26 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         $error_message =
             'Please select Class, Section, Exam and Student.';
 
-    } elseif (!empty($_POST['marks'])) {
+    } elseif (access_is_teacher() && !access_teacher_can_class($conn, $post_class_id, $post_section_id)) {
+
+        $error_message = 'You are not assigned to the selected class and section.';
+
+    } else {
+        $student_scope_stmt = $conn->prepare('SELECT 1 FROM students WHERE id=? AND class_id=? AND section_id=? AND status=1 LIMIT 1');
+        if (!$student_scope_stmt) {
+            $error_message = 'Unable to verify the selected student: ' . $conn->error;
+        } else {
+            $student_scope_stmt->bind_param('iii', $post_student_id, $post_class_id, $post_section_id);
+            if (!$student_scope_stmt->execute()) {
+                $error_message = 'Unable to verify the selected student: ' . $student_scope_stmt->error;
+            } elseif ($student_scope_stmt->get_result()->num_rows !== 1) {
+                $error_message = 'The selected student is not active in this class and section.';
+            }
+            $student_scope_stmt->close();
+        }
+    }
+
+    if ($error_message === '' && !empty($_POST['marks'])) {
 
         foreach ($_POST['marks'] as $subject_id => $values) {
 
@@ -1247,6 +1336,46 @@ Upload & Import CSV
 
 </form>
 
+</div>
+
+<div class="section-card">
+    <div class="section-title">
+        <i class="bi bi-file-earmark-spreadsheet"></i>
+        Class-wise blank report-card templates
+    </div>
+    <div class="small-note mb-3">
+        Excel templates contain protected formulas; use password <strong>9041</strong> to unlock the sheets.
+        CSV files contain blank entry columns only. They do not include student information.
+    </div>
+    <p><a class="btn btn-sm btn-primary" href="<?= BASE_URL; ?>/assets/report-card-templates/report-card-templates.zip"><i class="bi bi-download"></i> Download all report-card templates</a></p>
+    <div class="row">
+        <?php
+        $report_templates = array(
+            'nursery-ukg' => 'Nursery–UKG',
+            'class-1' => 'Class 1',
+            'class-2' => 'Class 2',
+            'classes-3-5' => 'Classes 3–5',
+            'classes-6-8' => 'Classes 6–8',
+            'classes-9-10' => 'Classes 9–10',
+            'classes-11-12' => 'Classes 11–12'
+        );
+        foreach ($report_templates as $template_key => $template_label):
+        ?>
+        <div class="col-md-4 mb-2">
+            <div class="border rounded p-2 h-100">
+                <strong><?= h($template_label); ?></strong>
+                <div class="mt-2">
+                    <a class="btn btn-sm btn-outline-success" href="<?= BASE_URL; ?>/assets/report-card-templates/<?= h($template_key); ?>.xlsx">
+                        Excel
+                    </a>
+                    <a class="btn btn-sm btn-outline-primary" href="<?= BASE_URL; ?>/assets/report-card-templates/<?= h($template_key); ?>.csv">
+                        CSV
+                    </a>
+                </div>
+            </div>
+        </div>
+        <?php endforeach; ?>
+    </div>
 </div>
 
 
@@ -1747,13 +1876,7 @@ PART-B — Co-Scholastic / Life Skills
 
 Use the CBSE-style values:
 
-<strong>B</strong> = Beginning
-&nbsp; | &nbsp;
-
-<strong>PF</strong> = Progressing Further
-&nbsp; | &nbsp;
-
-<strong>PG</strong> = Progressing
+<strong>Ad</strong>, <strong>Pf</strong>, or <strong>B</strong>
 
 </div>
 
@@ -1763,7 +1886,7 @@ Use the CBSE-style values:
 <div class="co-box">
 
 <div class="co-title">
-Life Skills
+Cognitive Skills
 </div>
 
 <div class="row g-3">
@@ -1773,7 +1896,7 @@ Life Skills
 $life_skills = [
     'Critical Thinking',
     'Problem Solving',
-    'Communication'
+    'Decision Making'
 ];
 
 foreach ($life_skills as $skill):
@@ -1799,7 +1922,7 @@ $key = strtolower(
 <option value="">Term-I</option>
 <option value="B">B</option>
 <option value="PF">PF</option>
-<option value="PG">PG</option>
+<option value="AD">Ad</option>
 
 </select>
 
@@ -1812,7 +1935,7 @@ $key = strtolower(
 <option value="">Term-II</option>
 <option value="B">B</option>
 <option value="PF">PF</option>
-<option value="PG">PG</option>
+<option value="AD">Ad</option>
 
 </select>
 
@@ -1834,7 +1957,7 @@ $key = strtolower(
 <div class="co-box">
 
 <div class="co-title">
-Social Emotional & Ethical Learning
+Social and Interpersonal Skills
 </div>
 
 <div class="row g-3">
@@ -1842,10 +1965,9 @@ Social Emotional & Ethical Learning
 <?php
 
 $sel = [
-    'Respect for Others',
-    'Responsibility',
-    'Honesty',
-    'Empathy'
+    'Civic Responsibility',
+    'Empathy',
+    'Integrity'
 ];
 
 foreach ($sel as $skill):
@@ -1867,7 +1989,7 @@ foreach ($sel as $skill):
 <option value="">I</option>
 <option value="B">B</option>
 <option value="PF">PF</option>
-<option value="PG">PG</option>
+<option value="AD">Ad</option>
 
 </select>
 
@@ -1880,7 +2002,7 @@ foreach ($sel as $skill):
 <option value="">II</option>
 <option value="B">B</option>
 <option value="PF">PF</option>
-<option value="PG">PG</option>
+<option value="AD">Ad</option>
 
 </select>
 
@@ -1902,7 +2024,7 @@ foreach ($sel as $skill):
 <div class="co-box">
 
 <div class="co-title">
-Positive Learning Habits
+Aesthetic and Cultural Development
 </div>
 
 <div class="row g-3">
@@ -1910,11 +2032,10 @@ Positive Learning Habits
 <?php
 
 $habits = [
-    'Work Habits',
-    'Time Management',
-    'Organization',
-    'Initiative',
-    'Perseverance'
+    'Awareness',
+    'Creativity',
+    'Participation',
+    'Expression'
 ];
 
 foreach ($habits as $habit):
@@ -1936,7 +2057,7 @@ foreach ($habits as $habit):
 <option value="">I</option>
 <option value="B">B</option>
 <option value="PF">PF</option>
-<option value="PG">PG</option>
+<option value="AD">Ad</option>
 
 </select>
 
@@ -1949,7 +2070,7 @@ foreach ($habits as $habit):
 <option value="">II</option>
 <option value="B">B</option>
 <option value="PF">PF</option>
-<option value="PG">PG</option>
+<option value="AD">Ad</option>
 
 </select>
 
@@ -1971,88 +2092,23 @@ foreach ($habits as $habit):
 <div class="co-box">
 
 <div class="co-title">
-Co-Curricular Activities
+Self-Management Skills
 </div>
 
 <div class="row g-3">
-
-<div class="col-md-6">
-
-<label class="form-label">
-Leadership Role
-</label>
-
-<div class="row">
-
-<div class="col-6">
-
-<select class="form-select grade-select">
-
-<option value="">Term-I</option>
-<option value="B">B</option>
-<option value="PF">PF</option>
-<option value="PG">PG</option>
-
-</select>
-
+<?php foreach (['Coping With Stress', 'Coping With Emotions', 'Self-Care and Hygiene'] as $skill): ?>
+<div class="col-md-4">
+    <label class="form-label"><?= h($skill) ?></label>
+    <div class="row">
+        <div class="col-6"><select class="form-select grade-select">
+            <option value="">Term-I</option><option value="B">B</option><option value="PF">PF</option><option value="AD">Ad</option>
+        </select></div>
+        <div class="col-6"><select class="form-select grade-select">
+            <option value="">Term-II</option><option value="B">B</option><option value="PF">PF</option><option value="AD">Ad</option>
+        </select></div>
+    </div>
 </div>
-
-<div class="col-6">
-
-<select class="form-select grade-select">
-
-<option value="">Term-II</option>
-<option value="B">B</option>
-<option value="PF">PF</option>
-<option value="PG">PG</option>
-
-</select>
-
-</div>
-
-</div>
-
-</div>
-
-
-<div class="col-md-6">
-
-<label class="form-label">
-Team Work Collaboration
-</label>
-
-<div class="row">
-
-<div class="col-6">
-
-<select class="form-select grade-select">
-
-<option value="">Term-I</option>
-<option value="B">B</option>
-<option value="PF">PF</option>
-<option value="PG">PG</option>
-
-</select>
-
-</div>
-
-<div class="col-6">
-
-<select class="form-select grade-select">
-
-<option value="">Term-II</option>
-<option value="B">B</option>
-<option value="PF">PF</option>
-<option value="PG">PG</option>
-
-</select>
-
-</div>
-
-</div>
-
-</div>
-
+<?php endforeach; ?>
 </div>
 
 </div>

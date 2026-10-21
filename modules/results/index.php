@@ -9,15 +9,9 @@
 
 require_once '../../config/database.php';
 require_once '../../config/config.php';
-
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ../../login.php');
-    exit;
-}
+require_once '../../includes/access.php';
+require_once '../../includes/school.php';
+access_require_login();
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     die("Database connection not found.");
@@ -97,27 +91,11 @@ if ($exam_query) {
           content="width=device-width, initial-scale=1.0">
 
     <title>CBSE Result Generator - School ERP</title>
-
-    <!-- Bootstrap -->
-    <link
-        rel="stylesheet"
-        href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css"
-    >
-
-    <!-- Font Awesome -->
-    <link
-        rel="stylesheet"
-        href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css"
-    >
-
+    <link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/adminlte.min.css">
+    <link rel="stylesheet" href="<?= BASE_URL; ?>/assets/plugins/fontawesome-free/css/all.min.css">
     <link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
 
     <style>
-
-        body {
-            background: #f4f6f9;
-            font-family: Arial, Helvetica, sans-serif;
-        }
 
         .page-wrapper {
             min-height: 100vh;
@@ -187,9 +165,13 @@ if ($exam_query) {
 
 </head>
 
-<body>
-
-<div class="page-wrapper">
+<body class="hold-transition sidebar-mini layout-fixed app-body">
+<div class="wrapper">
+<?php include '../../includes/navbar.php'; ?>
+<?php include '../../includes/sidebar.php'; ?>
+<div class="content-wrapper">
+<section class="content-header">
+<div class="container-fluid">
 
     <!-- PAGE HEADER -->
 
@@ -211,6 +193,10 @@ if ($exam_query) {
 
     </div>
 
+    </div>
+    </section>
+    <section class="content">
+    <div class="container-fluid">
 
     <!-- GENERATOR CARD -->
 
@@ -431,18 +417,7 @@ if ($exam_query) {
     </div>
 
 </div>
-
-
-<!-- Bootstrap JS -->
-
-<script
-    src="https://cdn.jsdelivr.net/npm/jquery@3.7.1/dist/jquery.min.js">
-</script>
-
-<script
-    src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js">
-</script>
-
-</body>
-
-</html>
+</div>
+</section>
+</div>
+<?php include '../../includes/footer.php'; ?>

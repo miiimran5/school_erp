@@ -29,7 +29,7 @@ if (!in_array($department, $employee_departments, true)) {
 $teachers = array();
 if ($search !== '') {
     $like = '%' . $search . '%';
-    $sql = 'SELECT t.id, t.employee_code, t.full_name, t.role, t.mobile, t.designation, t.department, t.joining_date, t.status, c.class_name AS class_incharge FROM teachers t LEFT JOIN classes c ON c.id = t.class_incharge_id WHERE (t.employee_code LIKE ? OR t.full_name LIKE ? OR t.role LIKE ? OR t.mobile LIKE ? OR t.designation LIKE ? OR t.department LIKE ?)';
+    $sql = 'SELECT t.id, t.employee_code, t.full_name, t.role, t.mobile, t.designation, t.department, t.joining_date, t.status, CASE WHEN c.class_name IS NULL THEN NULL ELSE CONCAT(c.class_name, IF(sec.section_name IS NULL, \'\', CONCAT(\' - \', sec.section_name))) END AS class_incharge FROM teachers t LEFT JOIN classes c ON c.id = t.class_incharge_id LEFT JOIN sections sec ON sec.id = t.class_incharge_section_id WHERE (t.employee_code LIKE ? OR t.full_name LIKE ? OR t.role LIKE ? OR t.mobile LIKE ? OR t.designation LIKE ? OR t.department LIKE ?)';
     if ($department !== '') {
         $sql .= ' AND department = ?';
     }
@@ -42,10 +42,10 @@ if ($search !== '') {
     }
 } else {
     if ($department !== '') {
-        $stmt = $conn->prepare('SELECT t.id, t.employee_code, t.full_name, t.role, t.mobile, t.designation, t.department, t.joining_date, t.status, c.class_name AS class_incharge FROM teachers t LEFT JOIN classes c ON c.id = t.class_incharge_id WHERE t.department = ? ORDER BY t.full_name');
+        $stmt = $conn->prepare('SELECT t.id, t.employee_code, t.full_name, t.role, t.mobile, t.designation, t.department, t.joining_date, t.status, CASE WHEN c.class_name IS NULL THEN NULL ELSE CONCAT(c.class_name, IF(sec.section_name IS NULL, \'\', CONCAT(\' - \', sec.section_name))) END AS class_incharge FROM teachers t LEFT JOIN classes c ON c.id = t.class_incharge_id LEFT JOIN sections sec ON sec.id = t.class_incharge_section_id WHERE t.department = ? ORDER BY t.full_name');
         $stmt->bind_param('s', $department);
     } else {
-        $stmt = $conn->prepare('SELECT t.id, t.employee_code, t.full_name, t.role, t.mobile, t.designation, t.department, t.joining_date, t.status, c.class_name AS class_incharge FROM teachers t LEFT JOIN classes c ON c.id = t.class_incharge_id ORDER BY t.full_name');
+        $stmt = $conn->prepare('SELECT t.id, t.employee_code, t.full_name, t.role, t.mobile, t.designation, t.department, t.joining_date, t.status, CASE WHEN c.class_name IS NULL THEN NULL ELSE CONCAT(c.class_name, IF(sec.section_name IS NULL, \'\', CONCAT(\' - \', sec.section_name))) END AS class_incharge FROM teachers t LEFT JOIN classes c ON c.id = t.class_incharge_id LEFT JOIN sections sec ON sec.id = t.class_incharge_section_id ORDER BY t.full_name');
     }
 }
 if ($stmt) {

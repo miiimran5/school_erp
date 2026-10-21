@@ -44,6 +44,7 @@ CREATE TABLE `teachers` (
   `address` text DEFAULT NULL,
   `photo` varchar(255) DEFAULT NULL,
   `class_incharge_id` int(11) DEFAULT NULL,
+  `class_incharge_section_id` int(11) DEFAULT NULL,
   `status` tinyint(1) NOT NULL DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
@@ -449,6 +450,8 @@ CREATE TABLE `portal_announcements` (
   `title` varchar(150) NOT NULL,
   `body` text NOT NULL,
   `audience` enum('All','Students','Teachers') NOT NULL DEFAULT 'All',
+  `class_id` int(11) DEFAULT NULL,
+  `section_id` int(11) DEFAULT NULL,
   `publish_date` date NOT NULL,
   `status` tinyint(1) NOT NULL DEFAULT 1,
   `created_by` int(11) DEFAULT NULL,
@@ -468,6 +471,7 @@ CREATE TABLE `portal_holidays` (
 CREATE TABLE `portal_homework` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `class_id` int(11) NOT NULL,
+  `section_id` int(11) DEFAULT NULL,
   `subject_id` int(11) DEFAULT NULL,
   `title` varchar(150) NOT NULL,
   `description` text NOT NULL,
@@ -488,6 +492,68 @@ CREATE TABLE `report_card_group_subjects` (
   UNIQUE KEY `uq_report_group_subject` (`group_key`,`subject_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+CREATE TABLE `report_card_class_settings` (
+  `class_id` int(11) NOT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`class_id`),
+  CONSTRAINT `fk_report_class_setting_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `report_card_class_subjects` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `class_id` int(11) NOT NULL,
+  `subject_id` int(11) NOT NULL,
+  `display_order` int(11) NOT NULL DEFAULT 0,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_report_class_subject` (`class_id`,`subject_id`),
+  KEY `idx_report_class_order` (`class_id`,`display_order`),
+  CONSTRAINT `fk_report_class_subject_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `hpc_observations` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` int(11) NOT NULL,
+  `session_id` int(11) NOT NULL DEFAULT 1,
+  `category` varchar(100) NOT NULL,
+  `observation` varchar(150) NOT NULL,
+  `term1_value` varchar(10) DEFAULT NULL,
+  `term2_value` varchar(10) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_hpc_observation_student` (`student_id`,`session_id`,`category`,`observation`),
+  KEY `idx_hpc_observation_session` (`session_id`,`student_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `student_promotions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` int(11) NOT NULL,
+  `from_class_id` int(11) NOT NULL,
+  `from_section_id` int(11) NOT NULL,
+  `to_class_id` int(11) NOT NULL,
+  `to_section_id` int(11) NOT NULL,
+  `promoted_by` int(11) DEFAULT NULL,
+  `promoted_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_student_promotion_student` (`student_id`,`promoted_at`),
+  KEY `idx_student_promotion_class` (`from_class_id`,`to_class_id`,`promoted_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE `teacher_class_responsibilities` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `teacher_id` int(11) NOT NULL,
+  `class_id` int(11) NOT NULL,
+  `section_id` int(11) NOT NULL,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_teacher_class_section` (`teacher_id`,`class_id`,`section_id`),
+  KEY `idx_teacher_responsibility_scope` (`teacher_id`,`class_id`,`section_id`,`status`),
+  CONSTRAINT `fk_teacher_responsibility_teacher` FOREIGN KEY (`teacher_id`) REFERENCES `teachers` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_teacher_responsibility_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON DELETE CASCADE,
+  CONSTRAINT `fk_teacher_responsibility_section` FOREIGN KEY (`section_id`) REFERENCES `sections` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CREATE TABLE `school_settings` (
   `setting_key` varchar(80) NOT NULL,
   `setting_value` text NOT NULL,
@@ -496,6 +562,9 @@ CREATE TABLE `school_settings` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
 INSERT INTO `school_settings` (`setting_key`, `setting_value`) VALUES
+('app_name', 'EduCare ERP'),
+('app_logo', 'educare-erp-logo.png'),
+('login_background', 'educare-erp-login-background.png'),
 ('school_name', 'Oasis Public School'),
 ('school_tagline', 'School ERP'),
 ('school_address', ''),
@@ -504,6 +573,25 @@ INSERT INTO `school_settings` (`setting_key`, `setting_value`) VALUES
 ('school_logo', ''),
 ('school_timezone', 'Asia/Kolkata'),
 ('academic_session', '');
+
+CREATE TABLE `school_portal_schools` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `school_code` varchar(20) NOT NULL,
+  `school_name` varchar(150) NOT NULL,
+  `database_name` varchar(64) NOT NULL,
+  `status` enum('Provisioning','Active','Inactive','Failed') NOT NULL DEFAULT 'Provisioning',
+  `is_primary` tinyint(1) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_school_portal_code` (`school_code`),
+  UNIQUE KEY `uq_school_portal_database` (`database_name`),
+  KEY `idx_school_portal_status` (`status`,`school_name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+INSERT INTO `school_portal_schools` (`id`, `school_code`, `school_name`, `database_name`, `status`, `is_primary`)
+SELECT 1, 'OASIS', COALESCE(NULLIF(MAX(CASE WHEN `setting_key`='school_name' THEN `setting_value` END), ''), 'Oasis Public School'), DATABASE(), 'Active', 1
+FROM `school_settings`;
 
 --
 -- Table structure for table `student_attendance`
@@ -731,6 +819,12 @@ ALTER TABLE `users`
 ALTER TABLE `student_attendance`
   ADD CONSTRAINT `fk_student_attendance_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON UPDATE CASCADE ON DELETE RESTRICT,
   ADD CONSTRAINT `fk_student_attendance_user` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`) ON UPDATE CASCADE ON DELETE SET NULL;
+
+--
+-- Constraints for table `hpc_observations`
+--
+ALTER TABLE `hpc_observations`
+  ADD CONSTRAINT `fk_hpc_observation_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON UPDATE CASCADE ON DELETE RESTRICT;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

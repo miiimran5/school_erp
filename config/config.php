@@ -6,7 +6,7 @@
 // ===============================
 
 // Project Name
-define('APP_NAME', 'Oasis Public School ERP');
+define('APP_NAME', 'EduCare ERP');
 
 // Base URL
 define('BASE_URL', rtrim((string)(getenv('ERP_BASE_URL') ?: 'http://localhost/school_erp'), '/'));
