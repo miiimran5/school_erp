@@ -16,7 +16,7 @@
  */
 
 require_once __DIR__ . '/../../config/config.php';
-require_once __DIR__ . '/../../config/db_connect.php';
+require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/access.php';
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
@@ -1061,30 +1061,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
 }
 
 ?>
-<!DOCTYPE html>
-<html lang="en">
-<head>
-
-<meta charset="UTF-8">
-
-<meta name="viewport"
-      content="width=device-width, initial-scale=1.0">
-
-<title>HPC Marks Centre</title>
-
-<link rel="stylesheet" href="<?= BASE_URL; ?>/assets/css/app.css">
-
-<link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
-
+<?php include __DIR__ . '/../../includes/header.php'; ?>
+<?php include __DIR__ . '/../../includes/navbar.php'; ?>
+<?php include __DIR__ . '/../../includes/sidebar.php'; ?>
 <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
 
 <style>
 
-body {
+.content-wrapper {
     background: #f4f7fb;
-    font-family: Arial, Helvetica, sans-serif;
 }
 
 .page-wrapper {
@@ -1224,11 +1210,25 @@ body {
     color: #6b7280;
 }
 
+.form-select {
+    display: block;
+    width: 100%;
+    padding: .375rem .75rem;
+    font-size: 1rem;
+    line-height: 1.5;
+    color: #495057;
+    background-color: #fff;
+    border: 1px solid #ced4da;
+    border-radius: .25rem;
+}
+
+.row.g-3 > [class*="col-"] {
+    margin-bottom: 1rem;
+}
+
 </style>
 
-</head>
-
-<body>
+<div class="content-wrapper">
 
 <div class="page-wrapper">
 
@@ -2342,5 +2342,5 @@ document.querySelectorAll('.marks-table tbody tr')
 
 </script>
 
-</body>
-</html>
+</div>
+<?php include __DIR__ . '/../../includes/footer.php'; ?>

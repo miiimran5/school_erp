@@ -1,6 +1,6 @@
 {
-  "name": "Oasis Public School ERP",
-  "short_name": "Oasis ERP",
+  "name": "EduCare ERP",
+  "short_name": "EduCare",
   "start_url": "login.php",
   "display": "standalone",
   "background_color": "#f4f7fb",

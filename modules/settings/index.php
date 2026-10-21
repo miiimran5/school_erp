@@ -207,7 +207,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 } else {
                     $stmt->bind_param('si', $new_status, $school_id);
                     if ($stmt->execute() && $stmt->affected_rows === 1) {
-                        $message = 'School access updated to ' . $new_status . '.';
+                        $message = $new_status === 'Inactive'
+                            ? 'School services have been stopped. Its users will be blocked from logging in and from continuing to use the ERP.'
+                            : 'School services have been activated. Its users can log in and use the ERP again.';
                     } else {
                         $error = 'The school could not be updated. The primary school cannot be deactivated.';
                     }
@@ -442,12 +444,12 @@ if ($registry_ready) {
         <?php if (!$registry_ready): ?>
             <div class="alert alert-warning">Import <code>database/migrations/016_school_database_registry.sql</code> into the primary database before adding schools.</div>
         <?php else: ?>
-            <div class="alert alert-info">Each school has a separate database. New schools never receive student, employee, login, attendance, payment, or marks records. You can choose whether to copy the primary school's report-card, subject-to-class, exam, fee, and other academic setup. Basic class, section, subject, role, and exam-type lists are prepared for every new school. The configured MySQL account must have permission to create databases and tables.</div>
+            <div class="alert alert-info">Each school has a separate database. Use <strong>Stop Services</strong> to set a school to Inactive: this blocks new logins and prevents users with existing sessions from making further ERP requests. Use <strong>Activate Services</strong> to restore access. The primary school cannot be deactivated here. New schools never receive student, employee, login, attendance, payment, or marks records. You can choose whether to copy the primary school's report-card, subject-to-class, exam, fee, and other academic setup. Basic class, section, subject, role, and exam-type lists are prepared for every new school. The configured MySQL account must have permission to create databases and tables.</div>
             <div class="card">
                 <div class="card-header bg-primary text-white"><h3 class="card-title">Schools and access</h3></div>
                 <div class="card-body table-responsive p-0">
                     <table class="table table-bordered table-striped mb-0">
-                        <thead><tr><th>School</th><th>Login code</th><th>Database</th><th>Status</th><th>School settings</th><th>Access</th></tr></thead>
+                        <thead><tr><th>School</th><th>Login code</th><th>Database</th><th>Status</th><th>School settings</th><th>Services</th></tr></thead>
                         <tbody>
                         <?php foreach ($schools as $school): ?>
                             <tr>
@@ -469,7 +471,7 @@ if ($registry_ready) {
                                             <input type="hidden" name="action" value="toggle_school">
                                             <input type="hidden" name="school_id" value="<?= (int)$school['id']; ?>">
                                             <input type="hidden" name="new_status" value="<?= $school['status'] === 'Active' ? 'Inactive' : 'Active'; ?>">
-                                            <button class="btn btn-sm btn-<?= $school['status'] === 'Active' ? 'outline-danger' : 'outline-success'; ?>" type="submit"><?= $school['status'] === 'Active' ? 'Deactivate' : 'Activate'; ?></button>
+                                            <button class="btn btn-sm btn-<?= $school['status'] === 'Active' ? 'outline-danger' : 'outline-success'; ?>" type="submit" onclick="return confirm('<?= $school['status'] === 'Active' ? 'Stop services for this school? All users will be blocked from the ERP.' : 'Activate services for this school and restore user access?'; ?>');"><?= $school['status'] === 'Active' ? 'Stop Services' : 'Activate Services'; ?></button>
                                         </form>
                                     <?php else: ?>—<?php endif; ?>
                                 </td>
