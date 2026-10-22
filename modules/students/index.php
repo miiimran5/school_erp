@@ -21,6 +21,7 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
 access_require_roles(array('Admin','Teacher'));
 
 $conn->set_charset("utf8mb4");
+access_require_feature($conn, 'student_records');
 
 
 /* ============================================================

@@ -2,6 +2,7 @@
 require_once '../../config/config.php';
 require_once '../../config/database.php';
 require_once '../../includes/access.php';
+require_once '../../includes/parents.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -30,7 +31,8 @@ $template_headers = array(
     'father_occupation', 'father_mobile', 'mother_name', 'mother_occupation',
     'mother_mobile', 'guardian_name', 'guardian_mobile', 'alternate_mobile',
     'address', 'city', 'district', 'state', 'pincode', 'house', 'transport',
-    'game', 'concession', 'medical_information', 'status'
+    'game', 'concession', 'medical_information', 'additional_subject',
+    'sibling_admission_no', 'status'
 );
 
 if (isset($_GET['download_template'])) {
@@ -38,11 +40,20 @@ if (isset($_GET['download_template'])) {
     header('Content-Disposition: attachment; filename="student_import_template.csv"');
     $output = fopen('php://output', 'w');
     fputcsv($output, $template_headers);
-    fputcsv($output, array(
-        'ADM-001', date('Y-m-d'), '1', 'I', '1', 'Example Student', 'Male',
-        '2015-01-01', '', 'General', '', '', '', '', '', '', '', '', '', '',
-        '', '', '', '', '', '', '', '0.00', '', '1'
-    ));
+    $example = array_fill_keys($template_headers, '');
+    $example['admission_no'] = 'ADM-001';
+    $example['admission_date'] = date('Y-m-d');
+    $example['roll_no'] = '1';
+    $example['class_name'] = 'I';
+    $example['section_name'] = 'A';
+    $example['student_name'] = 'Example Student';
+    $example['gender'] = 'Male';
+    $example['dob'] = '2015-01-01';
+    $example['father_name'] = 'Example Parent';
+    $example['category'] = 'General';
+    $example['concession'] = '0.00';
+    $example['status'] = '1';
+    fputcsv($output, array_values($example));
     fclose($output);
     exit;
 }
@@ -50,9 +61,15 @@ if (isset($_GET['download_template'])) {
 $success = '';
 $errors = array();
 $imported = 0;
+if (empty($_SESSION['student_import_csrf'])) {
+    $_SESSION['student_import_csrf'] = bin2hex(random_bytes(32));
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    if (!isset($_FILES['student_csv']) || $_FILES['student_csv']['error'] !== UPLOAD_ERR_OK) {
+    if (!isset($_POST['csrf_token'], $_SESSION['student_import_csrf'])
+        || !hash_equals((string)$_SESSION['student_import_csrf'], (string)$_POST['csrf_token'])) {
+        $errors[] = 'This request could not be verified. Refresh the page and try again.';
+    } elseif (!isset($_FILES['student_csv']) || $_FILES['student_csv']['error'] !== UPLOAD_ERR_OK) {
         $errors[] = 'Please choose a valid CSV file to upload.';
     } elseif (strtolower(pathinfo($_FILES['student_csv']['name'], PATHINFO_EXTENSION)) !== 'csv') {
         $errors[] = 'Only CSV files are accepted.';
@@ -62,19 +79,30 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $handle = fopen($_FILES['student_csv']['tmp_name'], 'r');
         $header = $handle ? fgetcsv($handle) : false;
         $header = is_array($header) ? array_map('trim', $header) : array();
+        if (isset($header[0])) {
+            $header[0] = preg_replace('/^\xEF\xBB\xBF/', '', $header[0]);
+        }
 
         if (!$handle || $header !== $template_headers) {
             $errors[] = 'The CSV headings do not match the downloaded student template.';
         } else {
             $class_ids = array();
-            $class_result = $conn->query("SELECT id, class_name FROM classes WHERE status = 1");
+            $class_result = $conn->query("SELECT id, class_name, class_order FROM classes WHERE status = 1");
             while ($class_result && ($row = $class_result->fetch_assoc())) {
-                $class_ids[strtolower(trim($row['class_name']))] = (int)$row['id'];
+                $class_ids[strtolower(trim($row['class_name']))] = array('id' => (int)$row['id'], 'class_order' => (int)$row['class_order']);
             }
             $section_ids = array();
             $section_result = $conn->query("SELECT id, section_name FROM sections WHERE status = 1");
             while ($section_result && ($row = $section_result->fetch_assoc())) {
                 $section_ids[strtolower(trim($row['section_name']))] = (int)$row['id'];
+            }
+            $additional_subjects = array();
+            $subject_result = $conn->query("SELECT cs.class_id,s.subject_name,s.subject_code,s.id FROM class_subjects cs JOIN subjects s ON s.id=cs.subject_id WHERE cs.status=1 AND s.status=1 AND cs.role='Main' AND COALESCE(cs.is_optional,0)=0");
+            while ($subject_result && ($subject = $subject_result->fetch_assoc())) {
+                $additional_subjects[(int)$subject['class_id']][strtolower(trim($subject['subject_name']))] = (int)$subject['id'];
+                if (trim((string)$subject['subject_code']) !== '') {
+                    $additional_subjects[(int)$subject['class_id']][strtolower(trim($subject['subject_code']))] = (int)$subject['id'];
+                }
             }
 
             $conn->begin_transaction();
@@ -85,9 +113,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                  father_occupation, father_mobile, mother_name, mother_occupation,
                  mother_mobile, guardian_name, guardian_mobile, alternate_mobile,
                  address, city, district, state, pincode, house, transport, game,
-                 concession, medical_information, status)
+                 concession, medical_information, status, additional_subject_id)
                 VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
 
             $line = 1;
@@ -109,7 +137,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $status = $row['status'] === '' ? 1 : (int)$row['status'];
                 $concession = $row['concession'] === '' ? '0.00' : $row['concession'];
 
-                if ($row['admission_no'] === '' || $row['student_name'] === '' ||
+                if ($row['admission_no'] === '' || $row['student_name'] === '' || $row['father_name'] === '' ||
                     !isset($class_ids[$class_key]) || !isset($section_ids[$section_key]) ||
                     !$date_check || $date_check->format('Y-m-d') !== $row['admission_date'] ||
                     !$dob_check || $dob_check->format('Y-m-d') !== $row['dob'] ||
@@ -119,8 +147,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     continue;
                 }
 
+                $class_id = (int)$class_ids[$class_key]['id'];
+                $additional_subject_id = null;
+                if ($row['additional_subject'] !== '') {
+                    $subject_key = strtolower($row['additional_subject']);
+                    if (!in_array($class_ids[$class_key]['class_order'], array(11, 12), true)
+                        || !isset($additional_subjects[$class_id][$subject_key])) {
+                        $errors[] = 'Line ' . $line . ': additional_subject must be a mandatory core subject assigned to Class 11 or 12; use its name or code.';
+                        continue;
+                    }
+                    $additional_subject_id = $additional_subjects[$class_id][$subject_key];
+                }
+                $sibling_student_id = 0;
+                if ($row['sibling_admission_no'] !== '') {
+                    $sibling_check = $conn->prepare('SELECT id FROM students WHERE admission_no=? AND status=1 LIMIT 1');
+                    if (!$sibling_check) {
+                        $errors[] = 'Line ' . $line . ': unable to verify sibling admission number.';
+                        continue;
+                    }
+                    $sibling_check->bind_param('s', $row['sibling_admission_no']);
+                    $sibling_check->execute();
+                    $sibling_student_id = (int)($sibling_check->get_result()->fetch_assoc()['id'] ?? 0);
+                    $sibling_check->close();
+                    if ($sibling_student_id <= 0) {
+                        $errors[] = 'Line ' . $line . ': sibling_admission_no was not found among existing active students.';
+                        continue;
+                    }
+                }
                 $values = array(
-                    $row['admission_no'], $row['admission_date'], $class_ids[$class_key],
+                    $row['admission_no'], $row['admission_date'], $class_id,
                     $section_ids[$section_key], $row['roll_no'], $row['student_name'],
                     $row['gender'], $row['dob'], $row['blood_group'], $row['category'],
                     $row['father_name'], $row['father_occupation'], $row['father_mobile'],
@@ -128,13 +183,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $row['guardian_name'], $row['guardian_mobile'], $row['alternate_mobile'],
                     $row['address'], $row['city'], $row['district'], $row['state'],
                     $row['pincode'], $row['house'], $row['transport'], $row['game'],
-                    $concession, $row['medical_information'], $status
+                    $concession, $row['medical_information'], $status, $additional_subject_id
                 );
-                $types = 'ssii' . str_repeat('s', 23) . 'dsi';
+                $types = 'ssii' . str_repeat('s', 23) . 'dsii';
                 $insert->bind_param($types, ...$values);
                 if (!$insert->execute()) {
                     $errors[] = 'Line ' . $line . ': ' . $insert->error;
                 } else {
+                    $new_student_id = (int)$insert->insert_id;
+                    if ($sibling_student_id > 0) {
+                        $parent_error = parent_link_sibling_students($conn, $sibling_student_id, $new_student_id);
+                        if ($parent_error !== '') {
+                            $errors[] = 'Line ' . $line . ': ' . $parent_error;
+                            continue;
+                        }
+                    }
                     $imported++;
                 }
             }
@@ -174,10 +237,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <p>Download the template, fill one student per row, save it as CSV, then upload it here.</p>
             <a class="btn btn-outline-primary mb-3" href="?download_template=1"><i class="fas fa-download"></i> Download CSV Template</a>
             <form method="post" enctype="multipart/form-data">
+                <input type="hidden" name="csrf_token" value="<?= import_e($_SESSION['student_import_csrf']); ?>">
                 <div class="form-group">
                     <label for="student_csv">Student CSV file</label>
                     <input id="student_csv" type="file" name="student_csv" class="form-control-file" accept=".csv,text/csv" required>
-                    <small class="form-text text-muted">Use date format YYYY-MM-DD. Class and section must exactly match the active names in the system.</small>
+                    <small class="form-text text-muted">Use YYYY-MM-DD dates and exact active class/section names. Father name is required. To link siblings, enter an existing student's admission number in sibling_admission_no. For Classes 11-12, additional_subject must be a mandatory subject name or code.</small>
                 </div>
                 <button type="submit" class="btn btn-success"><i class="fas fa-upload"></i> Upload Students</button>
             </form>

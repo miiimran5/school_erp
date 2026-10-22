@@ -12,6 +12,8 @@ require_once '../../config/config.php';
 require_once '../../includes/access.php';
 require_once '../../includes/school.php';
 access_require_login();
+access_require_roles(array('Admin', 'Teacher'));
+access_require_feature($conn, 'reports');
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     die("Database connection not found.");
@@ -35,7 +37,9 @@ $class_query = $conn->query("
 
 if ($class_query) {
     while ($row = $class_query->fetch_assoc()) {
-        $classes[] = $row;
+        if (!access_is_teacher() || access_teacher_can_class($conn, (int)$row['id'], 0)) {
+            $classes[] = $row;
+        }
     }
 }
 
@@ -66,17 +70,17 @@ if ($section_query) {
 
 $exams = [];
 
-$exam_query = $conn->query("
-    SELECT id, exam_name
-    FROM exams
-    WHERE status = 1
-    ORDER BY id DESC
-");
+$current_session_id = access_current_academic_session($conn);
+$exam_query = $conn->prepare('SELECT id,exam_name FROM exams WHERE status=1 AND (?=0 OR session_id=?) ORDER BY id DESC');
 
 if ($exam_query) {
-    while ($row = $exam_query->fetch_assoc()) {
+    $exam_query->bind_param('ii', $current_session_id, $current_session_id);
+    $exam_query->execute();
+    $exam_result = $exam_query->get_result();
+    while ($row = $exam_result->fetch_assoc()) {
         $exams[] = $row;
     }
+    $exam_query->close();
 }
 
 ?>

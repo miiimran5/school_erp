@@ -18,6 +18,7 @@
 require_once __DIR__ . '/../../config/config.php';
 require_once __DIR__ . '/../../config/database.php';
 require_once __DIR__ . '/../../includes/access.php';
+require_once __DIR__ . '/../../includes/grading.php';
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     die("Database connection not available.");
@@ -25,6 +26,12 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
 
 $conn->set_charset("utf8mb4");
 access_require_roles(array('Admin', 'Teacher'));
+access_require_feature($conn, 'exams');
+$entered_by = access_is_teacher() ? (int)($_SESSION['linked_id'] ?? 0) : null;
+$current_session_id = access_current_academic_session($conn);
+if (empty($_SESSION['import_marks_csrf'])) {
+    $_SESSION['import_marks_csrf'] = bin2hex(random_bytes(32));
+}
 
 /* ---------------------------------------------------------
    Helper
@@ -134,15 +141,25 @@ if (isset($_GET['download_template'])) {
 --------------------------------------------------------- */
 $success_message = $success_message ?? '';
 $error_message = $error_message ?? '';
+if ($_SERVER['REQUEST_METHOD'] === 'POST'
+    && in_array((string)($_POST['action'] ?? ''), array('csv_import', 'save_marks', 'save_observations'), true)
+    && (!isset($_POST['csrf_token'], $_SESSION['import_marks_csrf'])
+        || !hash_equals((string)$_SESSION['import_marks_csrf'], (string)$_POST['csrf_token']))) {
+    $error_message = 'This form could not be verified. Refresh the page and try again.';
+    $_POST['action'] = '';
+}
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST'
     && isset($_POST['action'])
     && $_POST['action'] === 'csv_import') {
 
     if (!isset($_FILES['csv_file'])
-        || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK) {
+        || $_FILES['csv_file']['error'] !== UPLOAD_ERR_OK
+        || strtolower(pathinfo($_FILES['csv_file']['name'] ?? '', PATHINFO_EXTENSION)) !== 'csv'
+        || (int)($_FILES['csv_file']['size'] ?? 0) <= 0
+        || (int)($_FILES['csv_file']['size'] ?? 0) > 5 * 1024 * 1024) {
 
-        $error_message = 'Please select a valid CSV file.';
+        $error_message = 'Please select a valid CSV file no larger than 5 MB.';
     } else {
 
         $tmp = $_FILES['csv_file']['tmp_name'];
@@ -164,8 +181,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
             } else {
 
                 $headers = array_map(function ($value) {
-                    return trim(strtolower($value));
+                    return trim(strtolower((string)$value));
                 }, $headers);
+                if (isset($headers[0])) {
+                    $headers[0] = preg_replace('/^\xEF\xBB\xBF/', '', $headers[0]);
+                }
 
                 $header_map = [];
 
@@ -202,7 +222,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                     $skipped = 0;
                     $errors = [];
 
+                    $csv_line = 1;
                     while (($row = fgetcsv($handle)) !== false) {
+                        if (++$csv_line > 10001) {
+                            $errors[] = 'The CSV may contain at most 10,000 data rows.';
+                            break;
+                        }
 
                         if (count($row) === 1 && trim($row[0]) === '') {
                             continue;
@@ -232,7 +257,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                         $stmt = $conn->prepare(
                             "SELECT id, class_id, section_id
                              FROM students
-                             WHERE admission_no = ?
+                             WHERE admission_no = ? AND status=1
                              LIMIT 1"
                         );
 
@@ -291,6 +316,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                         }
 
                         $subject_id = (int)$subject['id'];
+                        if (access_is_teacher() && !access_teacher_can_subject($conn, $class_id, $section_id, $subject_id)) {
+                            $errors[] = "Admission No. {$admission_no}: you are not assigned to enter this subject.";
+                            continue;
+                        }
 
                         /* Exam */
                         $exam_name = $get('exam_name');
@@ -305,6 +334,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                             "SELECT id
                              FROM exams
                              WHERE exam_name = ?
+                               AND (?=0 OR session_id=?)
                              LIMIT 1"
                         );
 
@@ -313,7 +343,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                             continue;
                         }
 
-                        $stmt->bind_param('s', $exam_name);
+                        $stmt->bind_param('sii', $exam_name, $current_session_id, $current_session_id);
                         $stmt->execute();
 
                         $exam_result = $stmt->get_result();
@@ -330,10 +360,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                         $exam_id = (int)$exam['id'];
 
                         /* Marks */
-                        $pa = (float)$get('pa_marks');
-                        $se = (float)$get('se_marks');
-                        $nb = (float)$get('nb_marks');
-                        $written = (float)$get('written_marks');
+                        $pa_value = $get('pa_marks');
+                        $se_value = $get('se_marks');
+                        $nb_value = $get('nb_marks');
+                        $written_value = $get('written_marks');
+                        if (!is_numeric($pa_value) || !is_numeric($se_value) || !is_numeric($nb_value) || !is_numeric($written_value)) {
+                            $errors[] = "Admission No. {$admission_no}: all four mark components must be numeric.";
+                            continue;
+                        }
+                        $pa = (float)$pa_value;
+                        $se = (float)$se_value;
+                        $nb = (float)$nb_value;
+                        $written = (float)$written_value;
 
                         if ($pa < 0 || $pa > 10) {
                             $errors[] =
@@ -406,7 +444,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                                      nb_marks = ?,
                                      written_marks = ?,
                                      obtained_marks = ?,
-                                     remarks = ?
+                                     remarks = ?,
+                                     entry_updated_by = ?
                                  WHERE id = ?"
                             );
 
@@ -416,7 +455,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                             }
 
                             $update->bind_param(
-                                'iidddddsi',
+                                'iidddddsii',
                                 $class_id,
                                 $section_id,
                                 $pa,
@@ -425,6 +464,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                                 $written,
                                 $obtained,
                                 $remarks,
+                                $entered_by,
                                 $mark_id
                             );
 
@@ -453,10 +493,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                                     nb_marks,
                                     written_marks,
                                     obtained_marks,
-                                    remarks
+                                    remarks,
+                                    entry_updated_by
                                 )
                                 VALUES
-                                (?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, ?)"
+                                (?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, ?, ?)"
                             );
 
                             if (!$insert) {
@@ -465,7 +506,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                             }
 
                             $insert->bind_param(
-                                'iiiiiddddds',
+                                'iiiiidddddsi',
                                 $student_id,
                                 $class_id,
                                 $section_id,
@@ -476,7 +517,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                                 $nb,
                                 $written,
                                 $obtained,
-                                $remarks
+                                $remarks,
+                                $entered_by
                             );
 
                             if ($insert->execute()) {
@@ -545,16 +587,15 @@ if ($result) {
 
 $exams = [];
 
-$result = $conn->query(
-    "SELECT id, exam_name
-     FROM exams
-     ORDER BY id DESC"
-);
-
-if ($result) {
+$exam_list_stmt = $conn->prepare('SELECT id,exam_name FROM exams WHERE status=1 AND (?=0 OR session_id=?) ORDER BY id DESC');
+if ($exam_list_stmt) {
+    $exam_list_stmt->bind_param('ii', $current_session_id, $current_session_id);
+    $exam_list_stmt->execute();
+    $result = $exam_list_stmt->get_result();
     while ($row = $result->fetch_assoc()) {
         $exams[] = $row;
     }
+    $exam_list_stmt->close();
 }
 
 /* ---------------------------------------------------------
@@ -862,48 +903,80 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
             }
             $student_scope_stmt->close();
         }
+        if ($error_message === '') {
+            $current_session_id = access_current_academic_session($conn);
+            $exam_scope_stmt = $conn->prepare('SELECT 1 FROM exams WHERE id=? AND status=1 AND (?=0 OR session_id=?) LIMIT 1');
+            if (!$exam_scope_stmt) {
+                $error_message = 'Unable to verify the selected examination: ' . $conn->error;
+            } else {
+                $exam_scope_stmt->bind_param('iii', $post_exam_id, $current_session_id, $current_session_id);
+                if (!$exam_scope_stmt->execute()) {
+                    $error_message = 'Unable to verify the selected examination: ' . $exam_scope_stmt->error;
+                } elseif ($exam_scope_stmt->get_result()->num_rows !== 1) {
+                    $error_message = 'The selected examination is not active in the current academic session.';
+                }
+                $exam_scope_stmt->close();
+            }
+        }
     }
 
     if ($error_message === '' && !empty($_POST['marks'])) {
-
+        $conn->begin_transaction();
+        $marks_save_ok = true;
         foreach ($_POST['marks'] as $subject_id => $values) {
 
-            $subject_id = (int)$subject_id;
+            $subject_id = filter_var($subject_id, FILTER_VALIDATE_INT);
+            if (!$subject_id || $subject_id < 1 || !is_array($values)) {
+                $error_message = 'One or more subject records are invalid.';
+                $marks_save_ok = false;
+                break;
+            }
+            $subject_scope_stmt = $conn->prepare('SELECT 1 FROM class_subjects WHERE class_id=? AND subject_id=? AND status=1 LIMIT 1');
+            if (!$subject_scope_stmt) {
+                $error_message = 'Unable to verify a subject assigned to this class: ' . $conn->error;
+                $marks_save_ok = false;
+                break;
+            }
+            $subject_scope_stmt->bind_param('ii', $post_class_id, $subject_id);
+            if (!$subject_scope_stmt->execute()) {
+                $error_message = 'Unable to verify a subject assigned to this class: ' . $subject_scope_stmt->error;
+                $subject_scope_stmt->close();
+                $marks_save_ok = false;
+                break;
+            }
+            $subject_is_assigned = $subject_scope_stmt->get_result()->num_rows === 1;
+            $subject_scope_stmt->close();
+            if (!$subject_is_assigned) {
+                $error_message = 'A selected subject is not assigned to this class.';
+                $marks_save_ok = false;
+                break;
+            }
+            if (access_is_teacher() && !access_teacher_can_subject($conn, $post_class_id, $post_section_id, $subject_id)) {
+                $error_message = 'You are not assigned to enter marks for one of the selected subjects.';
+                $marks_save_ok = false;
+                break;
+            }
 
-            $pa = isset($values['pa'])
-                ? (float)$values['pa']
-                : 0;
-
-            $se = isset($values['se'])
-                ? (float)$values['se']
-                : 0;
-
-            $nb = isset($values['nb'])
-                ? (float)$values['nb']
-                : 0;
-
-            $written = isset($values['written'])
-                ? (float)$values['written']
-                : 0;
+            if (!isset($values['pa'], $values['se'], $values['nb'], $values['written'])
+                || !is_numeric($values['pa']) || !is_numeric($values['se'])
+                || !is_numeric($values['nb']) || !is_numeric($values['written'])) {
+                $error_message = 'All mark components must contain valid numbers.';
+                $marks_save_ok = false;
+                break;
+            }
+            $pa = (float)$values['pa'];
+            $se = (float)$values['se'];
+            $nb = (float)$values['nb'];
+            $written = (float)$values['written'];
 
             $remarks = isset($values['remarks'])
                 ? trim($values['remarks'])
                 : '';
 
-            if ($pa < 0 || $pa > 10) {
-                $pa = 0;
-            }
-
-            if ($se < 0 || $se > 5) {
-                $se = 0;
-            }
-
-            if ($nb < 0 || $nb > 5) {
-                $nb = 0;
-            }
-
-            if ($written < 0 || $written > 80) {
-                $written = 0;
+            if ($pa < 0 || $pa > 10 || $se < 0 || $se > 5 || $nb < 0 || $nb > 5 || $written < 0 || $written > 80) {
+                $error_message = 'Marks exceed the allowed limits: PA 0-10, SE 0-5, NB 0-5, Written 0-80.';
+                $marks_save_ok = false;
+                break;
             }
 
             $obtained =
@@ -922,7 +995,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
             );
 
             if (!$check) {
-                continue;
+                $error_message = 'Unable to prepare the marks lookup: ' . $conn->error;
+                $marks_save_ok = false;
+                break;
             }
 
             $check->bind_param(
@@ -932,7 +1007,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                 $post_exam_id
             );
 
-            $check->execute();
+            if (!$check->execute()) {
+                $error_message = 'Unable to check existing marks: ' . $check->error;
+                $check->close();
+                $marks_save_ok = false;
+                break;
+            }
 
             $result = $check->get_result();
             $existing = $result->fetch_assoc();
@@ -953,28 +1033,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                          nb_marks = ?,
                          written_marks = ?,
                          obtained_marks = ?,
-                         remarks = ?
+                         remarks = ?,
+                         entry_updated_by = ?
                      WHERE id = ?"
                 );
 
-                if ($stmt) {
-
-                    $stmt->bind_param(
-                        'iidddddsi',
-                        $post_class_id,
-                        $post_section_id,
-                        $pa,
-                        $se,
-                        $nb,
-                        $written,
-                        $obtained,
-                        $remarks,
-                        $mark_id
-                    );
-
-                    $stmt->execute();
-                    $stmt->close();
+                if (!$stmt) {
+                    $error_message = 'Unable to prepare the marks update: ' . $conn->error;
+                    $marks_save_ok = false;
+                    break;
                 }
+                $stmt->bind_param(
+                    'iidddddsii',
+                    $post_class_id,
+                    $post_section_id,
+                    $pa,
+                    $se,
+                    $nb,
+                    $written,
+                    $obtained,
+                    $remarks,
+                    $entered_by,
+                    $mark_id
+                );
+                if (!$stmt->execute()) {
+                    $error_message = 'Unable to update marks: ' . $stmt->error;
+                    $stmt->close();
+                    $marks_save_ok = false;
+                    break;
+                }
+                $stmt->close();
 
             } else {
 
@@ -992,38 +1080,53 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
                         nb_marks,
                         written_marks,
                         obtained_marks,
-                        remarks
+                        remarks,
+                        entry_updated_by
                     )
                     VALUES
-                    (?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, ?)"
+                    (?, ?, ?, ?, ?, 100, ?, ?, ?, ?, ?, ?, ?)"
                 );
 
-                if ($stmt) {
-
-                    $stmt->bind_param(
-                        'iiiiiddddds',
-                        $post_student_id,
-                        $post_class_id,
-                        $post_section_id,
-                        $subject_id,
-                        $post_exam_id,
-                        $pa,
-                        $se,
-                        $nb,
-                        $written,
-                        $obtained,
-                        $remarks
-                    );
-
-                    $stmt->execute();
-                    $stmt->close();
+                if (!$stmt) {
+                    $error_message = 'Unable to prepare the marks insert: ' . $conn->error;
+                    $marks_save_ok = false;
+                    break;
                 }
+                $stmt->bind_param(
+                    'iiiiidddddsi',
+                    $post_student_id,
+                    $post_class_id,
+                    $post_section_id,
+                    $subject_id,
+                    $post_exam_id,
+                    $pa,
+                    $se,
+                    $nb,
+                    $written,
+                    $obtained,
+                    $remarks,
+                    $entered_by
+                );
+                if (!$stmt->execute()) {
+                    $error_message = 'Unable to save marks: ' . $stmt->error;
+                    $stmt->close();
+                    $marks_save_ok = false;
+                    break;
+                }
+                $stmt->close();
             }
         }
 
-        $success_message =
-            'Scholastic marks saved successfully.';
+        if ($marks_save_ok && $conn->commit()) {
+            $success_message = 'Scholastic marks saved successfully.';
+        } else {
+            $conn->rollback();
+            if ($error_message === '') {
+                $error_message = 'Unable to save marks. No changes were saved.';
+            }
+        }
 
+        if ($marks_save_ok && $error_message === '') {
         $student_id = $post_student_id;
         $class_id = $post_class_id;
         $section_id = $post_section_id;
@@ -1056,6 +1159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
             }
 
             $stmt->close();
+        }
         }
     }
 }
@@ -1299,6 +1403,7 @@ Download HPC CSV Template
 <input type="hidden"
        name="action"
        value="csv_import">
+<input type="hidden" name="csrf_token" value="<?= h($_SESSION['import_marks_csrf']) ?>">
 
 <div class="row align-items-end">
 
@@ -1603,6 +1708,7 @@ Total = 100
 <input type="hidden"
        name="action"
        value="save_marks">
+<input type="hidden" name="csrf_token" value="<?= h($_SESSION['import_marks_csrf']) ?>">
 
 <input type="hidden"
        name="student_id"
@@ -1694,7 +1800,7 @@ $total =
     $nb +
     $written;
 
-$grade = calculateGrade($total);
+$grade = grading_grade_for_percentage($conn, $class_id, $total);
 
 $remarks = $current
     ? $current['remarks']
@@ -1858,6 +1964,7 @@ PART-B — Co-Scholastic / Life Skills
 
 <form method="post" id="observations-form">
 <input type="hidden" name="action" value="save_observations">
+<input type="hidden" name="csrf_token" value="<?= h($_SESSION['import_marks_csrf']) ?>">
 <input type="hidden" name="student_id" value="<?= (int)$student_id ?>">
 <input type="hidden" name="session_id" value="<?= (int)$session_id ?>">
 <div class="row mb-3">

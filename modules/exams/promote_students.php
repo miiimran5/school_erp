@@ -107,7 +107,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && ($_POST['action'] ?? '') === 'promo
             }
             $source_stmt = $conn->prepare('SELECT id FROM students WHERE id=? AND class_id=? AND section_id=? AND status=1 FOR UPDATE');
             $history_stmt = $conn->prepare('INSERT INTO student_promotions (student_id, from_class_id, from_section_id, to_class_id, to_section_id, promoted_by) VALUES (?, ?, ?, ?, ?, ?)');
-            $update_stmt = $conn->prepare('UPDATE students SET class_id=?, section_id=?, updated_at=CURRENT_TIMESTAMP WHERE id=? AND class_id=? AND section_id=? AND status=1');
+            $update_stmt = $conn->prepare('UPDATE students SET class_id=?, section_id=?, additional_subject_id=NULL, updated_at=CURRENT_TIMESTAMP WHERE id=? AND class_id=? AND section_id=? AND status=1');
             if (!$source_stmt || !$history_stmt || !$update_stmt) {
                 throw new RuntimeException('Unable to prepare promotion queries: ' . $conn->error);
             }

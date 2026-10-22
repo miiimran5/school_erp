@@ -125,7 +125,7 @@ if (isset($_POST['login'])) {
         $_SESSION['linked_id'] = $user['linked_id'] ?? null;
         $_SESSION['erp_school_code'] = $school_registry_available ? $school_code : '';
 
-        header("Location: " . ($account_type === 'Student' ? 'modules/portal/student.php' : ($account_type === 'Teacher' ? 'modules/portal/teacher.php' : 'modules/dashboard/index.php')));
+        header("Location: " . ($account_type === 'Student' ? 'modules/portal/student.php' : ($account_type === 'Parent' ? 'modules/portal/parent.php' : ($account_type === 'Teacher' ? 'modules/portal/teacher.php' : 'modules/dashboard/index.php'))));
         exit;
 
     } elseif ($message === '') {

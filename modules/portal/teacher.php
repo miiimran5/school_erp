@@ -7,6 +7,9 @@ $conn->set_charset('utf8mb4');
 function portal_teacher_e($value) { return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8'); }
 
 $teacher_id = (int)($_SESSION['linked_id'] ?? 0);
+$allow_homework = access_feature_allowed($conn, 'homework');
+$allow_announcements = access_feature_allowed($conn, 'announcements');
+$allow_attendance = access_feature_allowed($conn, 'attendance');
 $message = '';
 $error = '';
 $responsibilities = array();
@@ -23,7 +26,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $stmt->close();
     $title = trim((string)($_POST['title'] ?? ''));
     $body = trim((string)($_POST['body'] ?? ''));
-    if (!$scope || !in_array($action, array('homework', 'notice'), true)) {
+    if (($action === 'homework' && !$allow_homework) || ($action === 'notice' && !$allow_announcements)) {
+        $error = 'This feature is not enabled for your account.';
+    } elseif (!$scope || !in_array($action, array('homework', 'notice'), true)) {
         $error = 'Choose a class and section assigned to you.';
     } elseif ($title === '' || strlen($title) > 150 || $body === '') {
         $error = 'Enter a title (up to 150 characters) and the full message.';
@@ -110,13 +115,13 @@ foreach ($responsibilities as $responsibility) {
             <div class="col-lg-4"><div class="card"><div class="card-header bg-primary text-white">My Classes</div><div class="card-body">
                 <?php if ($responsibilities): ?><ul class="mb-0"><?php foreach ($responsibilities as $scope): ?><li><?= portal_teacher_e($scope['class_name'] . ' - ' . $scope['section_name']); ?></li><?php endforeach; ?></ul><?php else: ?><p class="mb-0 text-muted">No class/section responsibility assigned yet.</p><?php endif; ?>
             </div></div></div>
-            <div class="col-lg-8"><div class="card"><div class="card-header bg-success text-white">Attendance and Student Profiles</div><div class="card-body"><a href="../attendance/index.php" class="btn btn-success">View / Mark / Edit Attendance</a><a href="../students/index.php" class="btn btn-primary ml-2">Edit Assigned Student Profiles</a></div></div></div>
+            <div class="col-lg-8"><div class="card"><div class="card-header bg-success text-white">Attendance and Student Profiles</div><div class="card-body"><?php if ($allow_attendance): ?><a href="../attendance/index.php" class="btn btn-success">View / Mark / Edit Attendance</a><?php endif; ?><a href="../students/index.php" class="btn btn-primary ml-2">Edit Assigned Student Profiles</a></div></div></div>
         </div>
-        <?php if ($responsibilities): ?>
+        <?php if ($responsibilities && ($allow_homework || $allow_announcements)): ?>
         <div class="card"><div class="card-header bg-warning"><i class="fas fa-paper-plane mr-1"></i>Post Homework or Class Notice</div><div class="card-body">
             <form method="post" class="form-row">
                 <div class="form-group col-md-3"><label>Class - Section</label><select name="responsibility_id" id="responsibility_id" class="form-control" required><option value="">Select assigned class</option><?php foreach ($responsibilities as $scope): ?><option value="<?= (int)$scope['id']; ?>"><?= portal_teacher_e($scope['class_name'] . ' - ' . $scope['section_name']); ?></option><?php endforeach; ?></select></div>
-                <div class="form-group col-md-2"><label>Post type</label><select name="content_action" id="content_action" class="form-control" required><option value="homework">Homework</option><option value="notice">Class notice</option></select></div>
+                <div class="form-group col-md-2"><label>Post type</label><select name="content_action" id="content_action" class="form-control" required><?php if ($allow_homework): ?><option value="homework">Homework</option><?php endif; ?><?php if ($allow_announcements): ?><option value="notice">Class notice</option><?php endif; ?></select></div>
                 <div class="form-group col-md-3"><label>Title</label><input name="title" class="form-control" maxlength="150" required></div>
                 <div class="form-group col-md-2" id="homework-subject-wrap"><label>Subject</label><select name="subject_id" id="subject_id" class="form-control"><option value="">Select class first</option></select></div>
                 <div class="form-group col-md-2" id="due-date-wrap"><label>Due date</label><input type="date" name="due_date" class="form-control"></div>

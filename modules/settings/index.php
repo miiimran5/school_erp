@@ -445,6 +445,7 @@ if ($registry_ready) {
             <div class="alert alert-warning">Import <code>database/migrations/016_school_database_registry.sql</code> into the primary database before adding schools.</div>
         <?php else: ?>
             <div class="alert alert-info">Each school has a separate database. Use <strong>Stop Services</strong> to set a school to Inactive: this blocks new logins and prevents users with existing sessions from making further ERP requests. Use <strong>Activate Services</strong> to restore access. The primary school cannot be deactivated here. New schools never receive student, employee, login, attendance, payment, or marks records. You can choose whether to copy the primary school's report-card, subject-to-class, exam, fee, and other academic setup. Basic class, section, subject, role, and exam-type lists are prepared for every new school. The configured MySQL account must have permission to create databases and tables.</div>
+            <a class="btn btn-outline-primary mb-3" href="<?= BASE_URL; ?>/modules/settings/feature_access.php"><i class="fas fa-user-lock mr-1"></i>Manage Teacher and Student Feature Access</a>
             <div class="card">
                 <div class="card-header bg-primary text-white"><h3 class="card-title">Schools and access</h3></div>
                 <div class="card-body table-responsive p-0">

@@ -11,6 +11,7 @@
 require_once '../../config/database.php';
 require_once '../../config/config.php';
 require_once '../../includes/access.php';
+require_once '../../includes/grading.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -20,6 +21,8 @@ if (!isset($_SESSION['user_id'])) {
     header('Location: ../../login.php');
     exit;
 }
+access_require_roles(array('Admin', 'Teacher', 'Student'));
+access_require_feature($conn, 'reports');
 if (access_is_student() && (int)($_GET['student_id'] ?? 0) !== access_student_id()) {
     http_response_code(403);
     exit('You can only view your own report card.');
@@ -50,37 +53,10 @@ function e($value)
    GRADE FUNCTION
    ========================================================= */
 
-function getGrade($percentage)
+function getGrade($percentage, $class_id = 0)
 {
-    if ($percentage >= 91) {
-        return 'A1';
-    }
-
-    if ($percentage >= 81) {
-        return 'A2';
-    }
-
-    if ($percentage >= 71) {
-        return 'B1';
-    }
-
-    if ($percentage >= 61) {
-        return 'B2';
-    }
-
-    if ($percentage >= 51) {
-        return 'C1';
-    }
-
-    if ($percentage >= 41) {
-        return 'C2';
-    }
-
-    if ($percentage >= 33) {
-        return 'D';
-    }
-
-    return 'E';
+    global $conn;
+    return grading_grade_for_percentage($conn, $class_id, $percentage);
 }
 
 
@@ -152,6 +128,7 @@ $student_stmt = $conn->prepare("
         dob,
         father_name,
         mother_name,
+        additional_subject_id,
         photo
     FROM students
     WHERE id = ?
@@ -379,6 +356,7 @@ $failed_subjects = 0;
 
 foreach ($marks as &$mark) {
 
+    $mark['is_additional'] = (int)$mark['subject_id'] === (int)($student['additional_subject_id'] ?? 0);
     $max =
         (float)$mark['max_marks'];
 
@@ -400,30 +378,34 @@ foreach ($marks as &$mark) {
         $mark['display_grade'] = $mark['grade'];
         $mark['percentage'] = null;
         $mark['result'] = $mark['grade'] === 'E' ? 'FAIL' : 'PASS';
-        if ($mark['result'] === 'FAIL') {
+        if (!$mark['is_additional'] && $mark['result'] === 'FAIL') {
             $failed_subjects++;
         }
-        $subject_count++;
+        if (!$mark['is_additional']) {
+            $subject_count++;
+        }
         continue;
     }
-    $mark['display_grade'] = getGrade($percentage);
+    $mark['display_grade'] = getGrade($percentage, $class_id);
     $mark['grade'] = $mark['display_grade'];
     if ($percentage < 33) {
 
         $mark['result'] = 'FAIL';
 
-        $failed_subjects++;
+        if (!$mark['is_additional']) {
+            $failed_subjects++;
+        }
 
     } else {
 
         $mark['result'] = 'PASS';
     }
 
-    $total_max += $max;
-
-    $total_obtained += $obtained;
-
-    $subject_count++;
+    if (!$mark['is_additional']) {
+        $total_max += $max;
+        $total_obtained += $obtained;
+        $subject_count++;
+    }
 }
 
 unset($mark);
@@ -441,7 +423,7 @@ if ($total_max > 0) {
         ($total_obtained / $total_max) * 100;
 }
 
-$overall_grade = $total_max > 0 ? getGrade($overall_percentage) : ($subject_count > 0 ? 'Graded' : 'N/A');
+$overall_grade = $total_max > 0 ? getGrade($overall_percentage, $class_id) : ($subject_count > 0 ? 'Graded' : 'N/A');
 
 
 /*
@@ -1098,7 +1080,6 @@ if (!empty($student['photo'])) {
                 <strong>
                     Student Name:
                 </strong>
-
                 <?= e(
                     $student['student_name']
                 ); ?>
@@ -1303,6 +1284,7 @@ if (!empty($student['photo'])) {
                             ); ?>
 
                         </strong>
+                        <?php if (!empty($mark['is_additional'])): ?><span class="badge badge-info">Additional - excluded from total</span><?php endif; ?>
 
 
                     </td>

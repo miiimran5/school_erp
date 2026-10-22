@@ -11,6 +11,7 @@
 require_once '../../config/database.php';
 require_once '../../config/config.php';
 require_once '../../includes/access.php';
+require_once '../../includes/parents.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -53,6 +54,14 @@ function e($value)
 
 $success = '';
 $error = '';
+if (empty($_SESSION['student_add_csrf'])) {
+    $_SESSION['student_add_csrf'] = bin2hex(random_bytes(32));
+}
+$student_add_csrf_valid = $_SERVER['REQUEST_METHOD'] !== 'POST'
+    || (isset($_POST['csrf_token']) && hash_equals((string)$_SESSION['student_add_csrf'], (string)$_POST['csrf_token']));
+if (!$student_add_csrf_valid) {
+    $error = 'This form could not be verified. Refresh the page and try again.';
+}
 
 $form = [
     'admission_no'       => '',
@@ -84,6 +93,7 @@ $form = [
     'transport'          => '',
     'game'               => '',
     'concession'         => '0.00',
+    'additional_subject_id' => '',
     'medical_information'=> '',
     'status'             => '1'
 ];
@@ -94,11 +104,13 @@ $form = [
    ============================================================ */
 
 $classes = [];
+$additional_subjects = array();
 
 $class_result = $conn->query("
     SELECT
         id,
-        class_name
+        class_name,
+        class_order
     FROM classes
     WHERE status = 1
     ORDER BY class_order ASC, id ASC
@@ -109,6 +121,21 @@ if ($class_result) {
     while ($row = $class_result->fetch_assoc()) {
 
         $classes[] = $row;
+    }
+
+    $additional_result = $conn->query("
+        SELECT cs.class_id, s.id AS subject_id, s.subject_name, c.class_name
+        FROM class_subjects cs
+        JOIN subjects s ON s.id=cs.subject_id
+        JOIN classes c ON c.id=cs.class_id
+        WHERE cs.status=1 AND s.status=1 AND cs.role='Main'
+          AND COALESCE(cs.is_optional,0)=0 AND c.class_order IN (11,12)
+        ORDER BY c.class_order,s.subject_name
+    ");
+    if ($additional_result) {
+        while ($row = $additional_result->fetch_assoc()) {
+            $additional_subjects[] = $row;
+        }
     }
 }
 
@@ -165,7 +192,8 @@ if ($house_result) {
    FORM SUBMISSION
    ============================================================ */
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
+    $sibling_student_id = filter_var($_POST['sibling_student_id'] ?? 0, FILTER_VALIDATE_INT);
 
 
     /* --------------------------------------------------------
@@ -221,6 +249,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error =
             'Date of Birth is required.';
 
+    } elseif ($form['father_name'] === '') {
+
+        $error =
+            'Father Name is required.';
+
     }
 
 
@@ -260,6 +293,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $error =
                     'Admission No. already exists. Please use a different Admission No.';
 
+            }
+
+            if ($error === '' && $form['additional_subject_id'] !== '') {
+                $additional_subject_id = filter_var($form['additional_subject_id'], FILTER_VALIDATE_INT);
+                $class_id = (int)$form['class_id'];
+                $subject_check = $conn->prepare("
+                    SELECT 1
+                    FROM class_subjects cs
+                    JOIN classes c ON c.id=cs.class_id
+                    WHERE cs.class_id=? AND cs.subject_id=? AND cs.status=1
+                      AND cs.role='Main' AND COALESCE(cs.is_optional,0)=0
+                      AND c.class_order IN (11,12)
+                    LIMIT 1
+                ");
+                if (!$additional_subject_id || !$subject_check) {
+                    $error = 'Select a mandatory core subject for Classes 11 or 12.';
+                } else {
+                    $subject_check->bind_param('ii', $class_id, $additional_subject_id);
+                    $subject_check->execute();
+                    if ($subject_check->get_result()->num_rows !== 1) {
+                        $error = 'The additional subject must be a mandatory subject assigned to this student\'s Class 11 or 12.';
+                    }
+                    $subject_check->close();
+                }
+            }
+
+            if ($error === '' && $sibling_student_id !== false && $sibling_student_id > 0) {
+                $sibling_check = $conn->prepare('SELECT id FROM students WHERE id=? AND status=1 LIMIT 1');
+                if (!$sibling_check) {
+                    $error = 'Unable to verify the selected sibling: ' . $conn->error;
+                } else {
+                    $sibling_check->bind_param('i', $sibling_student_id);
+                    $sibling_check->execute();
+                    if ($sibling_check->get_result()->num_rows !== 1) {
+                        $error = 'The selected sibling could not be found or is inactive.';
+                    }
+                    $sibling_check->close();
+                }
+            } elseif ($error === '' && $sibling_student_id === false) {
+                $error = 'Choose a valid sibling, or leave the sibling field empty.';
             }
 
             $stmt->close();
@@ -307,14 +380,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 game,
                 concession,
                 medical_information,
-                status
+                status,
+                additional_subject_id
             )
 
             VALUES
             (
+                ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?,
                 ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, '')
             )
         ";
 
@@ -333,15 +407,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
             /*
-             * 31 values
+             * 32 values
              *
              * s = string
              * i = integer
              * d = decimal
              */
 
+ $conn->begin_transaction();
  $stmt->bind_param(
-    "sssssssssssssssssssssssssssssss",
+    "ssssssssssssssssssssssssssssssss",
     $form['admission_no'],
     $form['admission_date'],
     $form['class_id'],
@@ -372,7 +447,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $form['game'],
     $form['concession'],
     $form['medical_information'],
-    $form['status']
+    $form['status'],
+    $form['additional_subject_id']
 );
 
 
@@ -383,6 +459,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 $stmt->close();
 
+                $parent_error = '';
+                if ($sibling_student_id > 0) {
+                    $parent_error = parent_link_sibling_students($conn, $sibling_student_id, $new_student_id);
+                }
+                if ($parent_error === '' && $conn->commit()) {
 
                 header(
                     "Location: " .
@@ -392,9 +473,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 exit;
 
+                } else {
+                    $conn->rollback();
+                    $error = $parent_error !== '' ? $parent_error : 'Unable to commit the student admission. No student was added.';
+                }
 
             } else {
 
+                $conn->rollback();
                 $error =
                     'Unable to save student: ' .
                     $stmt->error;
@@ -501,6 +587,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     action=""
     autocomplete="off"
 >
+<input type="hidden" name="csrf_token" value="<?= e($_SESSION['student_add_csrf']); ?>">
 
 
 <!-- =========================================================
@@ -606,6 +693,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                     <select
                         name="class_id"
+                        id="student-class"
                         class="form-control"
                         required
                     >
@@ -622,6 +710,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                             <option
                                 value="<?= (int)$class['id']; ?>"
+                                data-class-order="<?= (int)$class['class_order']; ?>"
                                 <?= (
                                     (string)$form['class_id']
                                     ===
@@ -644,6 +733,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                 </div>
 
+            </div>
+
+            <div class="col-md-6" id="additional-subject-wrap" style="display:none;">
+                <div class="form-group">
+                    <label>Additional Subject (Classes 11 and 12 only)</label>
+                    <select name="additional_subject_id" id="additional-subject" class="form-control">
+                        <option value="">No additional subject</option>
+                        <?php foreach ($additional_subjects as $subject): ?>
+                            <option value="<?= (int)$subject['subject_id']; ?>" data-class-id="<?= (int)$subject['class_id']; ?>" <?= (string)$form['additional_subject_id'] === (string)$subject['subject_id'] ? 'selected' : ''; ?>>
+                                <?= e($subject['class_name'] . ' - ' . $subject['subject_name']); ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                    <small class="form-text text-muted">Choose one mandatory core subject. Its marks are excluded from the overall total.</small>
+                </div>
             </div>
 
 
@@ -1202,6 +1306,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </div>
 
 
+<div class="card">
+    <div class="card-header bg-info text-white"><i class="fas fa-people-arrows mr-1"></i>Sibling / Parent Portal</div>
+    <div class="card-body">
+        <label for="sibling-search">Link this student to an existing sibling (optional)</label>
+        <input type="search" id="sibling-search" class="form-control" autocomplete="off" placeholder="Search by student name or admission number">
+        <input type="hidden" name="sibling_student_id" id="sibling-student-id" value="<?= (int)($_POST['sibling_student_id'] ?? 0); ?>">
+        <div id="sibling-search-results" class="list-group mt-2" role="listbox"></div>
+        <div id="selected-sibling" class="small text-success mt-2"></div>
+        <small class="form-text text-muted">The sibling keeps their own admission number and school records. Linking them lets one parent account switch between both students.</small>
+    </div>
+</div>
+
+
 <!-- =========================================================
      ADDRESS DETAILS
      ========================================================= -->
@@ -1545,5 +1662,66 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"
 ></script>
 
+<script>
+(function () {
+    var classSelect = document.getElementById('student-class');
+    var additionalWrap = document.getElementById('additional-subject-wrap');
+    var additionalSelect = document.getElementById('additional-subject');
+    function updateAdditionalSubjects() {
+        var option = classSelect.options[classSelect.selectedIndex];
+        var classOrder = option ? parseInt(option.getAttribute('data-class-order') || '0', 10) : 0;
+        var classId = classSelect.value;
+        additionalWrap.style.display = classOrder === 11 || classOrder === 12 ? '' : 'none';
+        Array.prototype.forEach.call(additionalSelect.options, function (subjectOption) {
+            if (!subjectOption.value) return;
+            subjectOption.hidden = subjectOption.getAttribute('data-class-id') !== classId;
+            if (subjectOption.hidden && subjectOption.selected) additionalSelect.value = '';
+        });
+    }
+    classSelect.addEventListener('change', updateAdditionalSubjects);
+    updateAdditionalSubjects();
+
+    var search = document.getElementById('sibling-search');
+    var results = document.getElementById('sibling-search-results');
+    var selectedId = document.getElementById('sibling-student-id');
+    var selectedLabel = document.getElementById('selected-sibling');
+    var timer;
+    search.addEventListener('input', function () {
+        window.clearTimeout(timer);
+        selectedId.value = '0';
+        selectedLabel.textContent = '';
+        var term = search.value.trim();
+        results.textContent = '';
+        if (term.length < 2) return;
+        timer = window.setTimeout(function () {
+            fetch('<?= BASE_URL; ?>/modules/students/search_siblings.php?q=' + encodeURIComponent(term), {credentials: 'same-origin'})
+                .then(function (response) {
+                    if (!response.ok) throw new Error('Search failed');
+                    return response.json();
+                })
+                .then(function (payload) {
+                    results.textContent = '';
+                    (payload.items || []).forEach(function (student) {
+                        var button = document.createElement('button');
+                        button.type = 'button';
+                        button.className = 'list-group-item list-group-item-action';
+                        button.textContent = student.student_name + ' (' + student.admission_no + ') - ' + student.class_name + ' / ' + student.section_name;
+                        button.addEventListener('click', function () {
+                            selectedId.value = String(student.id);
+                            search.value = student.student_name + ' (' + student.admission_no + ')';
+                            selectedLabel.textContent = 'Linked sibling: ' + search.value;
+                            results.textContent = '';
+                        });
+                        results.appendChild(button);
+                    });
+                    if (!(payload.items || []).length) results.textContent = 'No active student found.';
+                })
+                .catch(function () {
+                    results.textContent = 'Unable to search students right now.';
+                });
+        }, 250);
+    });
+}());
+</script>
 
 <?php include '../../includes/footer.php'; ?>

@@ -320,18 +320,18 @@ INSERT INTO `sections` (`id`, `section_name`, `status`, `created_at`) VALUES
 
 CREATE TABLE `students` (
   `id` int(11) NOT NULL,
-  `admission_no` varchar(50) NOT NULL,
+  `admission_no` varchar(30) NOT NULL,
   `admission_date` date NOT NULL,
   `class_id` int(11) NOT NULL,
   `section_id` int(11) NOT NULL,
   `house_id` int(11) DEFAULT NULL,
   `roll_no` varchar(20) DEFAULT NULL,
   `student_name` varchar(100) NOT NULL,
-  `gender` varchar(20) NOT NULL,
+  `gender` enum('Male','Female','Other') NOT NULL,
   `dob` date NOT NULL,
-  `blood_group` varchar(10) DEFAULT NULL,
+  `blood_group` varchar(5) DEFAULT NULL,
   `category` varchar(50) DEFAULT NULL,
-  `father_name` varchar(100) DEFAULT NULL,
+  `father_name` varchar(100) NOT NULL,
   `father_occupation` varchar(100) DEFAULT NULL,
   `father_mobile` varchar(15) DEFAULT NULL,
   `mother_name` varchar(100) DEFAULT NULL,
@@ -345,12 +345,13 @@ CREATE TABLE `students` (
   `district` varchar(100) DEFAULT NULL,
   `state` varchar(100) DEFAULT NULL,
   `pincode` varchar(10) DEFAULT NULL,
-  `house` varchar(100) DEFAULT NULL,
-  `transport` varchar(100) DEFAULT NULL,
+  `house` varchar(50) DEFAULT NULL,
+  `transport` varchar(50) DEFAULT NULL,
   `game` varchar(100) DEFAULT NULL,
-  `concession` decimal(10,2) NOT NULL DEFAULT 0.00,
+  `concession` decimal(10,2) DEFAULT 0.00,
   `medical_information` text DEFAULT NULL,
-  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `photo` varchar(255) DEFAULT NULL,
+  `status` tinyint(4) DEFAULT 1,
   `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
   `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
@@ -803,9 +804,101 @@ ALTER TABLE `users`
 ALTER TABLE `student_attendance`
   MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
 
+-- Core academic tables omitted from earlier versions of this dump.
+CREATE TABLE IF NOT EXISTS `academic_sessions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `session_name` varchar(20) NOT NULL,
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `subjects` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `subject_name` varchar(100) NOT NULL,
+  `subject_code` varchar(20) DEFAULT NULL,
+  `subject_type` enum('Scholastic','Co-Scholastic','Practical') DEFAULT 'Scholastic',
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `class_subjects` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `class_id` int(11) NOT NULL,
+  `subject_id` int(11) NOT NULL,
+  `role` enum('Main','Grading','Additional') NOT NULL DEFAULT 'Main',
+  `is_optional` tinyint(1) DEFAULT 0,
+  `status` tinyint(1) NOT NULL DEFAULT 1,
+  `sort_order` int(11) NOT NULL DEFAULT 0,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_class_subject` (`class_id`,`subject_id`),
+  KEY `fk_cs_subject` (`subject_id`),
+  CONSTRAINT `fk_cs_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_cs_subject` FOREIGN KEY (`subject_id`) REFERENCES `subjects` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `exams` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `exam_name` varchar(100) NOT NULL,
+  `exam_type_id` int(11) NOT NULL,
+  `session_id` int(11) NOT NULL,
+  `start_date` date DEFAULT NULL,
+  `end_date` date DEFAULT NULL,
+  `status` tinyint(1) DEFAULT 1,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `fk_exam_type` (`exam_type_id`),
+  KEY `fk_exam_session` (`session_id`),
+  CONSTRAINT `fk_exam_session` FOREIGN KEY (`session_id`) REFERENCES `academic_sessions` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_exam_type` FOREIGN KEY (`exam_type_id`) REFERENCES `exam_types` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `marks` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` int(11) NOT NULL,
+  `class_id` int(11) NOT NULL,
+  `section_id` int(11) NOT NULL,
+  `subject_id` int(11) NOT NULL,
+  `exam_id` int(11) NOT NULL,
+  `max_marks` decimal(5,2) NOT NULL DEFAULT 100.00,
+  `pa_marks` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `se_marks` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `nb_marks` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `written_marks` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `obtained_marks` decimal(5,2) NOT NULL DEFAULT 0.00,
+  `grade` varchar(10) DEFAULT NULL,
+  `remarks` varchar(255) DEFAULT NULL,
+  `entry_updated_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_marks` (`student_id`,`subject_id`,`exam_id`),
+  KEY `fk_marks_class` (`class_id`),
+  KEY `fk_marks_section` (`section_id`),
+  KEY `fk_marks_subject` (`subject_id`),
+  KEY `fk_marks_exam` (`exam_id`),
+  CONSTRAINT `fk_marks_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_marks_exam` FOREIGN KEY (`exam_id`) REFERENCES `exams` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_marks_section` FOREIGN KEY (`section_id`) REFERENCES `sections` (`id`) ON UPDATE CASCADE,
+  CONSTRAINT `fk_marks_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT `fk_marks_subject` FOREIGN KEY (`subject_id`) REFERENCES `subjects` (`id`) ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 --
 -- Constraints for dumped tables
 --
+
+--
+-- Constraints for table `students`
+--
+ALTER TABLE `students`
+  ADD CONSTRAINT `fk_students_class` FOREIGN KEY (`class_id`) REFERENCES `classes` (`id`) ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_students_section` FOREIGN KEY (`section_id`) REFERENCES `sections` (`id`) ON UPDATE CASCADE,
+  ADD CONSTRAINT `fk_students_house` FOREIGN KEY (`house_id`) REFERENCES `houses` (`id`) ON DELETE SET NULL ON UPDATE CASCADE;
 
 --
 -- Constraints for table `users`
@@ -825,6 +918,98 @@ ALTER TABLE `student_attendance`
 --
 ALTER TABLE `hpc_observations`
   ADD CONSTRAINT `fk_hpc_observation_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON UPDATE CASCADE ON DELETE RESTRICT;
+
+-- EduCare portal features (also maintained in migrations/019_educare_features.sql).
+ALTER TABLE `users`
+  MODIFY `account_type` enum('Admin','Teacher','Student','Parent') NOT NULL DEFAULT 'Admin';
+
+ALTER TABLE `students`
+  ADD COLUMN IF NOT EXISTS `additional_subject_id` int(11) DEFAULT NULL,
+  ADD KEY `idx_students_additional_subject` (`additional_subject_id`),
+  ADD CONSTRAINT `fk_students_additional_subject` FOREIGN KEY (`additional_subject_id`) REFERENCES `subjects` (`id`) ON UPDATE CASCADE ON DELETE SET NULL;
+
+CREATE TABLE IF NOT EXISTS `parent_accounts` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `parent_name` varchar(150) NOT NULL,
+  `mobile` varchar(20) DEFAULT NULL,
+  `user_id` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_parent_account_user` (`user_id`),
+  KEY `idx_parent_account_mobile` (`mobile`),
+  CONSTRAINT `fk_parent_account_user` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON UPDATE CASCADE ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `parent_students` (
+  `parent_id` int(11) NOT NULL,
+  `student_id` int(11) NOT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`parent_id`,`student_id`),
+  KEY `idx_parent_students_student` (`student_id`),
+  CONSTRAINT `fk_parent_students_parent` FOREIGN KEY (`parent_id`) REFERENCES `parent_accounts` (`id`) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT `fk_parent_students_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `role_feature_permissions` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `account_type` enum('Teacher','Student') NOT NULL,
+  `feature_key` varchar(60) NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_role_feature` (`account_type`,`feature_key`),
+  KEY `idx_role_feature_enabled` (`account_type`,`enabled`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `study_resources` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `resource_type` enum('Study Material','Syllabus','Time Table','Date Sheet') NOT NULL,
+  `class_id` int(11) DEFAULT NULL,
+  `section_id` int(11) DEFAULT NULL,
+  `subject_id` int(11) DEFAULT NULL,
+  `session_id` int(11) DEFAULT NULL,
+  `title` varchar(200) NOT NULL,
+  `stored_name` varchar(100) NOT NULL,
+  `original_name` varchar(255) NOT NULL,
+  `mime_type` varchar(100) NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_by_type` enum('Admin','Teacher') NOT NULL DEFAULT 'Admin',
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_study_resources_type_session` (`resource_type`,`session_id`,`created_at`),
+  KEY `idx_study_resources_class_section` (`class_id`,`section_id`,`resource_type`),
+  KEY `idx_study_resources_subject` (`subject_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `grading_scale_bands` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `class_id` int(11) NOT NULL,
+  `grade` varchar(10) NOT NULL,
+  `minimum_percent` decimal(5,2) NOT NULL,
+  `maximum_percent` decimal(5,2) NOT NULL,
+  `description` varchar(150) DEFAULT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uq_grading_scale_class_grade` (`class_id`,`grade`),
+  KEY `idx_grading_scale_range` (`class_id`,`minimum_percent`,`maximum_percent`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `portal_content_attachments` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `announcement_id` int(11) DEFAULT NULL,
+  `homework_id` int(11) DEFAULT NULL,
+  `stored_name` varchar(100) NOT NULL,
+  `original_name` varchar(255) NOT NULL,
+  `mime_type` varchar(100) NOT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_portal_attachment_announcement` (`announcement_id`),
+  KEY `idx_portal_attachment_homework` (`homework_id`),
+  CONSTRAINT `fk_portal_attachment_announcement` FOREIGN KEY (`announcement_id`) REFERENCES `portal_announcements` (`id`) ON UPDATE CASCADE ON DELETE CASCADE,
+  CONSTRAINT `fk_portal_attachment_homework` FOREIGN KEY (`homework_id`) REFERENCES `portal_homework` (`id`) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;

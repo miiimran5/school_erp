@@ -1,4 +1,5 @@
 <!-- Navbar -->
+<?php require_once __DIR__ . '/access.php'; ?>
 <nav class="main-header navbar navbar-expand navbar-white navbar-light">
 
     <!-- Left navbar links -->
@@ -19,6 +20,18 @@
     <!-- Right navbar links -->
     <ul class="navbar-nav ml-auto">
 
+        <?php
+        $home_path = access_is_student()
+            ? '/modules/portal/student.php'
+            : (access_is_parent()
+                ? '/modules/portal/parent.php'
+                : (access_is_teacher() ? '/modules/portal/teacher.php' : '/modules/dashboard/index.php'));
+        ?>
+        <li class="nav-item">
+            <a href="<?= BASE_URL . $home_path; ?>" class="nav-link" title="Home" aria-label="Home">
+                <i class="fas fa-home"></i><span class="d-none d-sm-inline ml-1">Home</span>
+            </a>
+        </li>
         <li class="nav-item d-flex align-items-center mr-1">
             <label class="sr-only" for="global-menu-search">Search ERP pages</label>
             <div class="input-group input-group-sm global-search-group">
@@ -73,6 +86,37 @@
                 <small class="text-muted d-block mt-3">These are browser shortcuts to the live ERP, not downloadable APK or native iOS app files.</small>
             </div>
         </li>
+
+        <?php
+        $academic_sessions = array();
+        $session_query = isset($conn) ? $conn->query("SELECT id, session_name FROM academic_sessions WHERE status=1 ORDER BY id DESC") : false;
+        if ($session_query) {
+            while ($session_row = $session_query->fetch_assoc()) {
+                $academic_sessions[] = $session_row;
+            }
+        }
+        if (!empty($academic_sessions)) {
+            $active_academic_session = access_current_academic_session($conn);
+            if (!isset($_SESSION['erp_session_change_token'])) {
+                $_SESSION['erp_session_change_token'] = bin2hex(random_bytes(32));
+            }
+            $current_path = (string)($_SERVER['REQUEST_URI'] ?? '/');
+        ?>
+        <li class="nav-item d-flex align-items-center mr-1">
+            <form method="post" action="<?= BASE_URL; ?>/modules/academic/change_session.php" class="form-inline">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['erp_session_change_token'], ENT_QUOTES, 'UTF-8'); ?>">
+                <input type="hidden" name="return_to" value="<?= htmlspecialchars($current_path, ENT_QUOTES, 'UTF-8'); ?>">
+                <label class="sr-only" for="academic-session-switcher">Change academic session</label>
+                <select id="academic-session-switcher" name="session_id" class="form-control form-control-sm" onchange="this.form.submit()" aria-label="Change academic session">
+                    <?php foreach ($academic_sessions as $academic_session): ?>
+                        <option value="<?= (int)$academic_session['id']; ?>" <?= (int)$academic_session['id'] === $active_academic_session ? 'selected' : ''; ?>>
+                            <?= htmlspecialchars($academic_session['session_name'], ENT_QUOTES, 'UTF-8'); ?>
+                        </option>
+                    <?php endforeach; ?>
+                </select>
+            </form>
+        </li>
+        <?php } ?>
 
         <li class="nav-item">
             <a href="<?= BASE_URL; ?>/logout.php" class="nav-link">

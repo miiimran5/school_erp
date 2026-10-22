@@ -8,6 +8,7 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 access_require_roles(array('Admin', 'Teacher'));
+access_require_feature($conn, 'attendance');
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     die('Database connection failed.');

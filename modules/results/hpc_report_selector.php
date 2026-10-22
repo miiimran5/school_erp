@@ -1,15 +1,11 @@
 <?php
 require_once '../../config/config.php';
 require_once '../../config/database.php';
+require_once '../../includes/access.php';
 
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ../../login.php');
-    exit;
-}
+access_require_roles(array('Admin', 'Teacher'));
+$conn->set_charset('utf8mb4');
+access_require_feature($conn, 'hpc_reports');
 
 function hpc_selector_e($value)
 {
@@ -25,7 +21,9 @@ $error = '';
 $class_result = $conn->query("SELECT id, class_name FROM classes WHERE status = 1 ORDER BY class_order, id");
 if ($class_result) {
     while ($row = $class_result->fetch_assoc()) {
-        $classes[] = $row;
+        if (!access_is_teacher() || access_teacher_can_class($conn, (int)$row['id'], 0)) {
+            $classes[] = $row;
+        }
     }
 } else {
     $error = 'Unable to load classes: ' . $conn->error;
@@ -54,6 +52,10 @@ $selected_section = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
 $selected_session = isset($_GET['session_id']) ? (int)$_GET['session_id'] : 0;
 
 if ($selected_class > 0 && $selected_section > 0) {
+    if (access_is_teacher() && !access_teacher_can_class($conn, $selected_class, $selected_section)) {
+        http_response_code(403);
+        exit('You are not assigned to this class and section.');
+    }
     $stmt = $conn->prepare(
         "SELECT id, admission_no, student_name, roll_no
          FROM students

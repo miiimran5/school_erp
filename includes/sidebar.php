@@ -1,4 +1,5 @@
 <!-- Main Sidebar Container -->
+<?php require_once __DIR__ . '/access.php'; ?>
 <aside class="main-sidebar sidebar-dark-primary elevation-4">
 
     <!-- Brand Logo -->
@@ -54,12 +55,23 @@
                 role="menu"
                 data-accordion="false"
             >
-                <?php if (function_exists('access_role') && access_role() === 'Student'): ?>
+                <?php if (access_is_parent()): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/portal/parent.php" class="nav-link"><i class="nav-icon fas fa-users"></i><p>Family Portal</p></a></li>
+                <?php elseif (access_is_student()): ?>
                 <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/portal/student.php" class="nav-link"><i class="nav-icon fas fa-home"></i><p>My Student Portal</p></a></li>
-                <?php elseif (function_exists('access_role') && access_role() === 'Teacher'): ?>
+                <?php elseif (access_is_teacher()): ?>
                 <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/portal/teacher.php" class="nav-link"><i class="nav-icon fas fa-home"></i><p>Teacher Control Panel</p></a></li>
                 <?php endif; ?>
 
+                <?php if (access_feature_allowed($conn, 'announcements') || access_feature_allowed($conn, 'homework')): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/portal/announcements.php" class="nav-link"><i class="nav-icon fas fa-bullhorn"></i><p>Announcements</p></a></li>
+                <?php endif; ?>
+                <?php if (access_feature_allowed($conn, 'study_materials')): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/resources/index.php?type=Study%20Material" class="nav-link"><i class="nav-icon fas fa-book-open"></i><p>Study Materials</p></a></li>
+                <?php endif; ?>
+                <?php if (access_feature_allowed($conn, 'syllabus')): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/resources/index.php?type=Syllabus" class="nav-link"><i class="nav-icon fas fa-book"></i><p>Syllabus</p></a></li>
+                <?php endif; ?>
 
                 <!-- =================================================
                      DASHBOARD
@@ -87,7 +99,7 @@
                      STUDENTS
                      ================================================= -->
 
-                <?php if (!function_exists('access_role') || access_role() !== 'Student'): ?><li class="nav-item">
+                <?php if (access_is_admin() || (access_is_teacher() && access_feature_allowed($conn, 'student_records'))): ?><li class="nav-item">
 
                     <a
                         href="<?= BASE_URL; ?>/modules/students/index.php"
@@ -104,12 +116,12 @@
 
                 </li><?php endif; ?>
 
-                <?php if (in_array((int)($_SESSION['role_id'] ?? 0), array(1, 2, 3), true)): ?>
-                <?php if (!function_exists('access_role') || access_role() === 'Admin'): ?><li class="nav-item">
+                <?php if (access_is_admin()): ?>
+                <li class="nav-item">
                     <a href="<?= BASE_URL; ?>/modules/exams/promote_students.php" class="nav-link">
                         <i class="nav-icon fas fa-user-graduate"></i><p>Promote Students</p>
                     </a>
-                </li><?php endif; ?>
+                </li>
                 <?php endif; ?>
 
 
@@ -117,7 +129,7 @@
                      TEACHERS
                      ================================================= -->
 
-                <?php if (!function_exists('access_role') || access_role() === 'Admin'): ?><li class="nav-item">
+                <?php if (access_is_admin()): ?><li class="nav-item">
 
                     <a
                         href="<?= BASE_URL; ?>/modules/teachers/index.php"
@@ -141,25 +153,29 @@
                     </a>
                 </li><?php endif; ?>
 
-                <?php if (in_array((int)($_SESSION['role_id'] ?? 0), array(1, 2, 3), true)): ?>
-                <?php if (!function_exists('access_role') || access_role() !== 'Student'): ?><li class="nav-item">
+                <?php if (access_is_admin()): ?>
+                <li class="nav-item">
                     <a href="<?= BASE_URL; ?>/modules/users/index.php" class="nav-link">
                         <i class="nav-icon fas fa-key"></i>
                         <p>Login Accounts</p>
                     </a>
-                </li><?php endif; ?><?php endif; ?>
+                </li><?php endif; ?>
                 <?php if ((int)($_SESSION['role_id'] ?? 0) === 1): ?><li class="nav-item">
                     <a href="<?= BASE_URL; ?>/modules/settings/index.php" class="nav-link">
                         <i class="nav-icon fas fa-user-shield"></i><p>Super Admin Portal</p>
                     </a>
                 </li><?php endif; ?>
+                <?php if (access_is_admin()): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/settings/feature_access.php" class="nav-link"><i class="nav-icon fas fa-user-lock"></i><p>Feature Access</p></a></li>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/users/parent_accounts.php" class="nav-link"><i class="nav-icon fas fa-users-cog"></i><p>Parent Portal Accounts</p></a></li>
+                <?php endif; ?>
 
 
                 <!-- =================================================
                      ATTENDANCE
                      ================================================= -->
 
-                <?php if (!function_exists('access_role') || access_role() !== 'Student'): ?><li class="nav-item">
+                <?php if (access_is_admin() || (access_is_teacher() && access_feature_allowed($conn, 'attendance'))): ?><li class="nav-item">
 
                     <a
                         href="<?= BASE_URL; ?>/modules/attendance/index.php"
@@ -175,6 +191,15 @@
                     </a>
 
                 </li><?php endif; ?>
+                <?php if (access_is_student() && access_feature_allowed($conn, 'attendance')): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/portal/student.php#attendance" class="nav-link"><i class="nav-icon fas fa-calendar-check"></i><p>My Attendance</p></a></li>
+                <?php endif; ?>
+                <?php if (access_feature_allowed($conn, 'timetable')): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/resources/index.php?type=Time%20Table" class="nav-link"><i class="nav-icon fas fa-clock"></i><p>Time Table</p></a></li>
+                <?php endif; ?>
+                <?php if ((access_is_student() || access_is_parent()) && access_feature_allowed($conn, 'date_sheets')): ?>
+                <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/resources/index.php?type=Date%20Sheet" class="nav-link"><i class="nav-icon fas fa-calendar-alt"></i><p>Date Sheets</p></a></li>
+                <?php endif; ?>
 
 
                 <!-- =================================================
@@ -199,7 +224,7 @@
                      EXAMINATIONS
                      ================================================= -->
 
-                <?php if (!function_exists('access_role') || access_role() !== 'Student'): ?><li class="nav-item has-treeview">
+                <?php if (access_is_admin() || (access_is_teacher() && (access_feature_allowed($conn, 'exams') || access_feature_allowed($conn, 'reports') || access_feature_allowed($conn, 'hpc_reports')))): ?><li class="nav-item has-treeview">
 
                     <a
                         href="#"
@@ -224,7 +249,7 @@
 
                         <!-- Marks Entry -->
 
-                        <?php if (!function_exists('access_role') || access_role() === 'Admin'): ?><li class="nav-item">
+                        <?php if (access_is_admin() || (access_is_teacher() && access_feature_allowed($conn, 'exams'))): ?><li class="nav-item">
 
                             <a
                                 href="<?= BASE_URL; ?>/modules/exams/index.php"
@@ -241,31 +266,40 @@
 
                         </li><?php endif; ?>
 
-                        <li class="nav-item">
+                        <?php if (access_is_admin()): ?><li class="nav-item">
                             <a href="<?= BASE_URL; ?>/modules/exams/types.php" class="nav-link">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Exam Types</p>
                             </a>
-                        </li>
+                        </li><?php endif; ?>
 
-                        <li class="nav-item">
+                        <?php if (access_is_admin()): ?><li class="nav-item">
                             <a href="<?= BASE_URL; ?>/modules/exams/subjects.php" class="nav-link">
                                 <i class="far fa-circle nav-icon"></i>
                                 <p>Subjects</p>
                             </a>
-                        </li>
+                        </li><?php endif; ?>
                         <?php if (!function_exists('access_role') || access_role() === 'Admin'): ?>
-                        <li class="nav-item">
+                        <?php if (access_is_admin()): ?><li class="nav-item">
                             <a href="<?= BASE_URL; ?>/modules/results/report_subjects.php" class="nav-link">
                                 <i class="far fa-circle nav-icon"></i><p>Report Card Subjects</p>
                             </a>
-                        </li>
+                        </li><?php endif; ?>
+                        <?php endif; ?>
+                        <?php if (access_feature_allowed($conn, 'exams')): ?>
+                        <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/exams/mark_status.php" class="nav-link"><i class="far fa-circle nav-icon"></i><p>Marks Entry Status</p></a></li>
+                        <?php endif; ?>
+                        <?php if (access_is_admin()): ?>
+                        <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/exams/grading.php" class="nav-link"><i class="far fa-circle nav-icon"></i><p>Grading System</p></a></li>
+                        <?php endif; ?>
+                        <?php if (access_feature_allowed($conn, 'date_sheets')): ?>
+                        <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/resources/index.php?type=Date%20Sheet" class="nav-link"><i class="far fa-circle nav-icon"></i><p>Date Sheets</p></a></li>
                         <?php endif; ?>
 
 
                         <!-- Import Marks -->
 
-                        <li class="nav-item">
+                        <?php if (access_feature_allowed($conn, 'exams')): ?><li class="nav-item">
 
                             <a
                                 href="<?= BASE_URL; ?>/modules/exams/import_marks.php"
@@ -280,12 +314,12 @@
 
                             </a>
 
-                        </li>
+                        </li><?php endif; ?>
 
 
                         <!-- Result Generator -->
 
-                        <li class="nav-item">
+                        <?php if (access_is_admin() || access_feature_allowed($conn, 'reports')): ?><li class="nav-item">
 
                             <a
                                 href="<?= BASE_URL; ?>/modules/results/index.php"
@@ -300,12 +334,12 @@
 
                             </a>
 
-                        </li>
+                        </li><?php endif; ?>
 
 
                         <!-- HPC Report Card -->
 
-                        <li class="nav-item">
+                        <?php if (access_is_admin() || access_feature_allowed($conn, 'hpc_reports')): ?><li class="nav-item">
 
                             <a
                                 href="<?= BASE_URL; ?>/modules/results/hpc_report_selector.php"
@@ -320,7 +354,7 @@
 
                             </a>
 
-                        </li>
+                        </li><?php endif; ?>
 
 
                     </ul>
@@ -357,3 +391,25 @@
     </div>
 
 </aside>
+<script>
+(function () {
+    var menu = document.querySelector('.nav-sidebar');
+    if (!menu) return;
+    function sortItems(list, pinDashboard) {
+        Array.prototype.slice.call(list.children).forEach(function (item) {
+            var nested = item.querySelector(':scope > ul.nav-treeview');
+            if (nested) sortItems(nested, false);
+        });
+        var items = Array.prototype.slice.call(list.children);
+        items.sort(function (first, second) {
+            var firstLabel = (first.querySelector(':scope > a p') || first).textContent.trim();
+            var secondLabel = (second.querySelector(':scope > a p') || second).textContent.trim();
+            if (pinDashboard && firstLabel === 'Dashboard') return -1;
+            if (pinDashboard && secondLabel === 'Dashboard') return 1;
+            return firstLabel.localeCompare(secondLabel, undefined, {sensitivity: 'base'});
+        });
+        items.forEach(function (item) { list.appendChild(item); });
+    }
+    sortItems(menu, true);
+}());
+</script>

@@ -42,6 +42,8 @@ if (!isset($_SESSION['user_id'])) {
 */
 
 require_once __DIR__ . '/../../config/db.php';
+require_once __DIR__ . '/../../includes/access.php';
+require_once __DIR__ . '/../../includes/grading.php';
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     die("Database connection not available.");
@@ -52,6 +54,8 @@ if ($conn->connect_errno) {
 }
 
 $conn->set_charset("utf8mb4");
+access_require_roles(array('Admin', 'Teacher'));
+access_require_feature($conn, 'reports');
 
 
 /*
@@ -69,6 +73,10 @@ $result_scope = isset($_GET['result_scope']) && $_GET['result_scope'] === 'both'
 
 if ($class_id <= 0 || $section_id <= 0 || $exam_id <= 0) {
     die("Invalid Class, Section or Examination.");
+}
+if (access_is_teacher() && !access_teacher_can_class($conn, $class_id, $section_id)) {
+    http_response_code(403);
+    exit('You are not assigned to the selected class and section.');
 }
 
 
@@ -149,39 +157,10 @@ function cleanNumber($value)
 }
 
 
-function gradeFromPercentage($percentage)
+function gradeFromPercentage($percentage, $class_id = 0)
 {
-    $percentage = (float)$percentage;
-
-    if ($percentage >= 91) {
-        return 'A1';
-    }
-
-    if ($percentage >= 81) {
-        return 'A2';
-    }
-
-    if ($percentage >= 71) {
-        return 'B1';
-    }
-
-    if ($percentage >= 61) {
-        return 'B2';
-    }
-
-    if ($percentage >= 51) {
-        return 'C1';
-    }
-
-    if ($percentage >= 41) {
-        return 'C2';
-    }
-
-    if ($percentage >= 33) {
-        return 'D';
-    }
-
-    return 'E';
+    global $conn;
+    return grading_grade_for_percentage($conn, $class_id, $percentage);
 }
 
 
@@ -357,6 +336,11 @@ $stmt->close();
 
 if (!$exam) {
     die("Examination not found.");
+}
+$current_session_id = access_current_academic_session($conn);
+if ($current_session_id > 0 && (int)$exam['session_id'] !== $current_session_id) {
+    http_response_code(404);
+    exit('The examination is not available in the selected academic session.');
 }
 
 $exam_name = $exam['exam_name'];
@@ -539,6 +523,7 @@ $stmt = $conn->prepare("
         game,
         concession,
         medical_information,
+        additional_subject_id,
         photo,
         status
     FROM students
@@ -1573,6 +1558,7 @@ $subject_rows = [];
 foreach ($scholasticSubjects as $subject) {
 
     $subject_id = (int)$subject['id'];
+    $is_additional_subject = (int)($student['additional_subject_id'] ?? 0) === $subject_id;
 
     $mark =
         isset($marksForStudent[$subject_id])
@@ -1692,7 +1678,8 @@ foreach ($scholasticSubjects as $subject) {
 
     $grade =
         gradeFromPercentage(
-            $percentage
+            $percentage,
+            $class_id
         );
 
 
@@ -1702,11 +1689,10 @@ foreach ($scholasticSubjects as $subject) {
     |--------------------------------------------------------------------------
     */
 
-    $term_total +=
-        $display_obtained;
-
-    $term_max +=
-        $max_marks;
+    if (!$is_additional_subject) {
+        $term_total += $display_obtained;
+        $term_max += $max_marks;
+    }
 
 
     /*
@@ -1744,6 +1730,9 @@ foreach ($scholasticSubjects as $subject) {
         'grade' =>
             $grade,
 
+        'is_additional' =>
+            $is_additional_subject,
+
         'remarks' =>
             $remarks
     ];
@@ -1761,7 +1750,8 @@ $overall_percentage =
 
 $overall_grade =
     gradeFromPercentage(
-        $overall_percentage
+        $overall_percentage,
+        $class_id
     );
 
 
@@ -2147,6 +2137,7 @@ TOTAL<br>(100)<br>Grade
 <?= h(
     $row['subject']['subject_name']
 ); ?>
+<?php if (!empty($row['is_additional'])): ?><span class="badge badge-info">Additional Subject (not in total)</span><?php endif; ?>
 
 
 </td>
@@ -2518,7 +2509,8 @@ foreach ($requiredOther as $requiredName) {
                                 (
                                     $obt /
                                     $max
-                                ) * 100
+                                ) * 100,
+                                $class_id
                             );
                     }
                 }

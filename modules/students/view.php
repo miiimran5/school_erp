@@ -1,6 +1,6 @@
 <?php
 require_once '../../config/config.php'; require_once '../../config/database.php'; require_once '../../includes/access.php';
-access_require_roles(array('Admin','Teacher')); $conn->set_charset('utf8mb4');
+access_require_roles(array('Admin','Teacher')); $conn->set_charset('utf8mb4'); access_require_feature($conn, 'student_records');
 function student_view_e($v){return htmlspecialchars((string)$v,ENT_QUOTES,'UTF-8');}
 $id=(int)($_GET['id']??0);$stmt=$conn->prepare('SELECT s.*,c.class_name,sec.section_name FROM students s LEFT JOIN classes c ON c.id=s.class_id LEFT JOIN sections sec ON sec.id=s.section_id WHERE s.id=?');$stmt->bind_param('i',$id);$stmt->execute();$student=$stmt->get_result()->fetch_assoc();$stmt->close();if(!$student){http_response_code(404);exit('Student not found.');}
 if(access_is_teacher()&&!access_teacher_can_class($conn,(int)$student['class_id'],(int)$student['section_id'])){http_response_code(403);exit('You can only view assigned students.');}

@@ -2,19 +2,31 @@
 session_start();
 require_once '../../config/database.php';
 require_once '../../config/config.php';
+require_once '../../includes/access.php';
 
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ../../login.php');
-    exit;
+access_require_roles(array('Admin', 'Teacher'));
+access_require_feature($conn, 'exams');
+if (empty($_SESSION['marks_csrf'])) {
+    $_SESSION['marks_csrf'] = bin2hex(random_bytes(32));
 }
 
 include '../../includes/header.php';
 include '../../includes/navbar.php';
 include '../../includes/sidebar.php';
 
-$classes  = mysqli_query($conn,"SELECT * FROM classes WHERE status=1 ORDER BY class_order");
+$class_query = mysqli_query($conn,"SELECT * FROM classes WHERE status=1 ORDER BY class_order");
+$classes = array();
+while ($class_query && ($class_row = mysqli_fetch_assoc($class_query))) {
+    if (!access_is_teacher() || access_teacher_can_class($conn, (int)$class_row['id'], 0)) {
+        $classes[] = $class_row;
+    }
+}
 $sections = mysqli_query($conn,"SELECT * FROM sections WHERE status=1 ORDER BY section_name");
-$exams    = mysqli_query($conn,"SELECT e.id, e.exam_name, et.max_marks FROM exams e LEFT JOIN exam_types et ON et.id=e.exam_type_id WHERE e.status=1 ORDER BY e.start_date DESC, e.id DESC");
+$current_session_id = access_current_academic_session($conn);
+$exam_stmt = $conn->prepare('SELECT e.id,e.exam_name,et.max_marks FROM exams e LEFT JOIN exam_types et ON et.id=e.exam_type_id WHERE e.status=1 AND (?=0 OR e.session_id=?) ORDER BY e.start_date DESC,e.id DESC');
+$exam_stmt->bind_param('ii', $current_session_id, $current_session_id);
+$exam_stmt->execute();
+$exams = $exam_stmt->get_result();
 $selected_class = isset($_GET['class_id']) ? (int)$_GET['class_id'] : 0;
 $selected_section = isset($_GET['section_id']) ? (int)$_GET['section_id'] : 0;
 $selected_exam = isset($_GET['exam_id']) ? (int)$_GET['exam_id'] : 0;
@@ -22,6 +34,10 @@ $selected_subject = isset($_GET['subject_id']) ? (int)$_GET['subject_id'] : 0;
 $max_marks = 100;
 $selected_class_order = 0;
 if ($selected_class > 0) {
+    if (access_is_teacher() && !access_teacher_can_class($conn, $selected_class, $selected_section)) {
+        http_response_code(403);
+        exit('You are not assigned to the selected class and section.');
+    }
     $class_order_stmt = $conn->prepare("SELECT class_order FROM classes WHERE id=? AND status=1");
     $class_order_stmt->bind_param('i', $selected_class);
     $class_order_stmt->execute();
@@ -45,6 +61,9 @@ $grade_only = $selected_class_order > 0 && $selected_class_order <= 8;
 
 </div>
 
+<?php } ?>
+<?php if(isset($_GET['error'])){ ?>
+<div class="alert alert-danger">Marks could not be saved. Check the selected class, section, subject, and values, then try again.</div>
 <?php } ?>
 <h1>Marks Entry</h1>
 </div>
@@ -72,7 +91,7 @@ Select Examination
 <label>Class</label>
 <select name="class_id" class="form-control" required>
 <option value="">Select</option>
-<?php while($c=mysqli_fetch_assoc($classes)){ ?>
+<?php foreach($classes as $c){ ?>
 <option value="<?= $c['id']; ?>" <?= (isset($_GET['class_id']) && $_GET['class_id']==$c['id'])?'selected':''; ?>>
 <?= $c['class_name']; ?>
 </option>
@@ -123,6 +142,7 @@ ORDER BY cs.sort_order, s.subject_name
 ");
 
 while($subjects && $sub=mysqli_fetch_assoc($subjects)){
+if (access_is_teacher() && !access_teacher_can_subject($conn, $selected_class, $selected_section, (int)$sub['id'])) continue;
 ?>
 
 <option value="<?= $sub['id']; ?>" <?= (isset($_GET['subject_id']) && $_GET['subject_id']==$sub['id'])?'selected':''; ?>>
@@ -187,6 +207,7 @@ ORDER BY roll_no");
 
 <form method="POST" action="save_marks.php">
 
+<input type="hidden" name="csrf_token" value="<?= htmlspecialchars($_SESSION['marks_csrf'], ENT_QUOTES, 'UTF-8'); ?>">
 <input type="hidden" name="class_id" value="<?= $class;?>">
 <input type="hidden" name="section_id" value="<?= $section;?>">
 <input type="hidden" name="subject_id" value="<?= $subject;?>">

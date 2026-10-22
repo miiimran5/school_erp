@@ -25,15 +25,9 @@
 
 require_once '../../config/database.php';
 require_once '../../config/config.php';
-
-if (session_status() === PHP_SESSION_NONE) {
-    session_start();
-}
-
-if (!isset($_SESSION['user_id'])) {
-    header('Location: ../../login.php');
-    exit;
-}
+require_once '../../includes/access.php';
+access_require_roles(array('Admin', 'Teacher'));
+access_require_feature($conn, 'hpc_reports');
 
 if (!isset($conn) || !($conn instanceof mysqli)) {
     die("Database connection not found.");
@@ -153,6 +147,10 @@ if (
 
         </div>
     ");
+}
+if (access_is_teacher() && !access_teacher_can_class($conn, $class_id, $section_id)) {
+    http_response_code(403);
+    exit('You are not assigned to this class and section.');
 }
 
 
