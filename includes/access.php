@@ -77,6 +77,28 @@ function access_feature_allowed($conn, $feature)
         return false;
     }
 
+    if ($role === 'Teacher') {
+        $teacher_id = (int)($_SESSION['linked_id'] ?? 0);
+        if ($teacher_id > 0) {
+            $teacher_stmt = $conn->prepare('SELECT enabled FROM teacher_feature_permissions WHERE teacher_id=? AND feature_key=? LIMIT 1');
+            if (!$teacher_stmt) {
+                error_log('Teacher feature access lookup failed: ' . $conn->error);
+                return false;
+            }
+            $teacher_stmt->bind_param('is', $teacher_id, $feature);
+            if (!$teacher_stmt->execute()) {
+                error_log('Teacher feature access lookup failed: ' . $teacher_stmt->error);
+                $teacher_stmt->close();
+                return false;
+            }
+            $teacher_row = $teacher_stmt->get_result()->fetch_assoc();
+            $teacher_stmt->close();
+            if ($teacher_row) {
+                return (int)$teacher_row['enabled'] === 1;
+            }
+        }
+    }
+
     $stmt = $conn->prepare('SELECT enabled FROM role_feature_permissions WHERE account_type=? AND feature_key=? LIMIT 1');
     if (!$stmt) {
         error_log('Feature access lookup failed: ' . $conn->error);

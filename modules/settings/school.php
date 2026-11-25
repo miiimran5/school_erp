@@ -5,9 +5,9 @@ require_once '../../includes/access.php';
 require_once '../../includes/school.php';
 access_require_login();
 
-if (!access_is_super_admin() || $conn !== $master_conn) {
+if (!access_is_super_admin() || $conn !== $master_conn || (string)($_SESSION['erp_school_code'] ?? '') !== ERP_SUPER_ADMIN_CODE) {
     http_response_code(403);
-    exit('Only the Super Admin on the primary school portal can edit school settings.');
+    exit('Only the Super Admin portal can edit school settings.');
 }
 
 function school_settings_e($value)
@@ -28,7 +28,7 @@ if (!$school_stmt->execute()) {
 }
 $school = $school_stmt->get_result()->fetch_assoc();
 $school_stmt->close();
-if (!$school || (int)$school['is_primary'] === 1 || !preg_match('/^[A-Za-z0-9_]{1,64}$/', $school['database_name'])) {
+if (!$school || (int)$school['is_primary'] === 1 || $school['database_name'] === DB_CONTROL_NAME || !preg_match('/^[A-Za-z0-9_]{1,64}$/', $school['database_name'])) {
     http_response_code(404);
     exit('The selected school was not found.');
 }

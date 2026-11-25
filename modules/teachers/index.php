@@ -59,7 +59,7 @@ if ($stmt) {
 <?php include '../../includes/navbar.php'; ?>
 <?php include '../../includes/sidebar.php'; ?>
 <div class="content-wrapper">
-<section class="content-header"><div class="container-fluid"><div class="d-flex justify-content-between"><h1><i class="fas fa-users"></i> Employees</h1><div><a href="assignments.php" class="btn btn-info mr-2"><i class="fas fa-chalkboard-teacher"></i> Subjects & Classes</a><a href="import.php" class="btn btn-success mr-2"><i class="fas fa-file-upload"></i> Import CSV</a><a href="add.php" class="btn btn-primary"><i class="fas fa-plus"></i> Add Employee</a></div></div></div></section>
+<section class="content-header"><div class="container-fluid"><div class="d-flex justify-content-between flex-wrap"><h1><i class="fas fa-users"></i> Employees</h1><div><a href="../users/export_credentials.php?type=employee&amp;format=excel" class="btn btn-outline-primary mr-2"><i class="fas fa-key"></i> Employee Login IDs</a><a href="../users/export_credentials.php?type=employee&amp;format=pdf" class="btn btn-outline-dark mr-2"><i class="fas fa-file-pdf"></i> Employee IDs PDF</a><a href="assignments.php" class="btn btn-info mr-2"><i class="fas fa-chalkboard-teacher"></i> Subjects & Classes</a><a href="import.php" class="btn btn-success mr-2"><i class="fas fa-file-upload"></i> Import CSV</a><a href="add.php" class="btn btn-primary"><i class="fas fa-plus"></i> Add Employee</a></div></div></div></section>
 <section class="content"><div class="container-fluid">
 <?php if ($message !== ''): ?><div class="alert alert-success"><?= teacher_e($message); ?></div><?php endif; ?>
 <?php if ($error !== ''): ?><div class="alert alert-danger"><?= teacher_e($error); ?></div><?php endif; ?>

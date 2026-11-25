@@ -12,6 +12,7 @@ require_once '../../config/database.php';
 require_once '../../config/config.php';
 require_once '../../includes/access.php';
 require_once '../../includes/parents.php';
+require_once '../../includes/office.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -65,6 +66,7 @@ if (!$student_add_csrf_valid) {
 
 $form = [
     'admission_no'       => '',
+    'registration_no'    => '',
     'admission_date'     => date('Y-m-d'),
     'roll_no'            => '',
     'class_id'           => '',
@@ -85,6 +87,7 @@ $form = [
     'guardian_mobile'    => '',
     'alternate_mobile'   => '',
     'address'            => '',
+    'previous_school'    => '',
     'city'               => '',
     'district'           => '',
     'state'              => '',
@@ -97,6 +100,27 @@ $form = [
     'medical_information'=> '',
     'status'             => '1'
 ];
+office_ensure_schema($conn);
+$inquiry_id = (int)($_GET['inquiry_id'] ?? $_POST['inquiry_id'] ?? 0);
+if ($inquiry_id > 0 && $_SERVER['REQUEST_METHOD'] !== 'POST') {
+    $inquiry_stmt = $conn->prepare("SELECT student_name, class_id, mobile, father_name, address, previous_school FROM admission_inquiries WHERE id=? AND status='Open'");
+    if ($inquiry_stmt) {
+        $inquiry_stmt->bind_param('i', $inquiry_id);
+        $inquiry_stmt->execute();
+        $inquiry = $inquiry_stmt->get_result()->fetch_assoc();
+        $inquiry_stmt->close();
+        if ($inquiry) {
+            $form['student_name'] = $inquiry['student_name'];
+            $form['class_id'] = $inquiry['class_id'];
+            $form['father_name'] = $inquiry['father_name'];
+            $form['father_mobile'] = $inquiry['mobile'];
+            $form['address'] = $inquiry['address'];
+            $form['previous_school'] = $inquiry['previous_school'];
+        } else {
+            $inquiry_id = 0;
+        }
+    }
+}
 
 
 /* ============================================================
@@ -254,6 +278,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
         $error =
             'Father Name is required.';
 
+    } elseif (strlen($form['registration_no']) > 40 || strlen($form['previous_school']) > 150) {
+
+        $error =
+            'Registration number or previous school name is too long.';
+
     }
 
 
@@ -351,6 +380,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
             INSERT INTO students
             (
                 admission_no,
+                registration_no,
                 admission_date,
                 class_id,
                 section_id,
@@ -371,6 +401,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
                 guardian_mobile,
                 alternate_mobile,
                 address,
+                previous_school,
                 city,
                 district,
                 state,
@@ -386,9 +417,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
 
             VALUES
             (
-                ?, ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULLIF(?, '')
+                ?, NULLIF(?, ''), ?, ?, ?, NULLIF(?, ''), ?, ?, ?, ?,
+                ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                ?, ?, ?, ?, NULLIF(?, ''), NULLIF(?, '')
             )
         ";
 
@@ -406,18 +437,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
         } else {
 
 
-            /*
-             * 32 values
-             *
-             * s = string
-             * i = integer
-             * d = decimal
-             */
-
  $conn->begin_transaction();
- $stmt->bind_param(
-    "ssssssssssssssssssssssssssssssss",
+ $student_values = array(
     $form['admission_no'],
+    $form['registration_no'],
     $form['admission_date'],
     $form['class_id'],
     $form['section_id'],
@@ -438,6 +461,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
     $form['guardian_mobile'],
     $form['alternate_mobile'],
     $form['address'],
+    $form['previous_school'],
     $form['city'],
     $form['district'],
     $form['state'],
@@ -450,6 +474,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
     $form['status'],
     $form['additional_subject_id']
 );
+ $bind_values = array(str_repeat('s', count($student_values)));
+ foreach ($student_values as $index => $value) {
+    $bind_values[] = &$student_values[$index];
+ }
+ call_user_func_array(array($stmt, 'bind_param'), $bind_values);
 
 
             if ($stmt->execute()) {
@@ -462,6 +491,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
                 $parent_error = '';
                 if ($sibling_student_id > 0) {
                     $parent_error = parent_link_sibling_students($conn, $sibling_student_id, $new_student_id);
+                }
+                $posted_inquiry_id = (int)($_POST['inquiry_id'] ?? 0);
+                if ($parent_error === '' && $posted_inquiry_id > 0) {
+                    $mark_inquiry = $conn->prepare("UPDATE admission_inquiries SET status='Admitted' WHERE id=? AND status='Open'");
+                    if ($mark_inquiry) {
+                        $mark_inquiry->bind_param('i', $posted_inquiry_id);
+                        if (!$mark_inquiry->execute() || $mark_inquiry->affected_rows !== 1) {
+                            $parent_error = 'The selected inquiry is no longer open. No student was admitted.';
+                        }
+                        $mark_inquiry->close();
+                    } else {
+                        $parent_error = 'Unable to update the selected inquiry: ' . $conn->error;
+                    }
                 }
                 if ($parent_error === '' && $conn->commit()) {
 
@@ -588,6 +630,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
     autocomplete="off"
 >
 <input type="hidden" name="csrf_token" value="<?= e($_SESSION['student_add_csrf']); ?>">
+<?php if ($inquiry_id > 0): ?><input type="hidden" name="inquiry_id" value="<?= (int)$inquiry_id; ?>"><?php endif; ?>
 
 
 <!-- =========================================================
@@ -655,6 +698,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
 
                 </div>
 
+            </div>
+
+            <div class="col-md-4">
+                <div class="form-group">
+                    <label>Registration No. <small class="text-muted">(optional)</small></label>
+                    <input type="text" name="registration_no" class="form-control" value="<?= e($form['registration_no']); ?>" maxlength="40">
+                </div>
             </div>
 
 
@@ -1357,6 +1407,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && $student_add_csrf_valid) {
 
                 </div>
 
+            </div>
+
+            <div class="col-md-6">
+                <div class="form-group">
+                    <label>Previous School</label>
+                    <input type="text" name="previous_school" class="form-control" value="<?= e($form['previous_school']); ?>" maxlength="150">
+                </div>
             </div>
 
 

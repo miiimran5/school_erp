@@ -7,11 +7,17 @@ define('DB_HOST', getenv('ERP_DB_HOST') ?: 'localhost');
 define('DB_USER', getenv('ERP_DB_USER') ?: 'root');
 define('DB_PASS', getenv('ERP_DB_PASS') ?: '');
 define('DB_NAME', getenv('ERP_DB_NAME') ?: 'school_erp');
+define('DB_CONTROL_NAME', getenv('ERP_CONTROL_DB') ?: 'school_erp_control');
+define('DB_TEMPLATE_NAME', getenv('ERP_TEMPLATE_DB') ?: DB_NAME);
+define('ERP_SUPER_ADMIN_CODE', 'SUPER_ADMIN');
 
 function erp_open_database($database_name)
 {
     if (!preg_match('/^[A-Za-z0-9_]{1,64}$/', (string)$database_name)) {
         throw new RuntimeException('The configured school database name is invalid.');
+    }
+    if (in_array(strtolower($database_name), array('information_schema', 'mysql', 'performance_schema', 'sys'), true)) {
+        throw new RuntimeException('A system database cannot be used as a school database.');
     }
 
     $connection = new mysqli(DB_HOST, DB_USER, DB_PASS, $database_name);
@@ -25,12 +31,40 @@ function erp_open_database($database_name)
     return $connection;
 }
 
+function erp_template_database($control_connection)
+{
+    $environment_database = getenv('ERP_TEMPLATE_DB');
+    $database_name = $environment_database !== false && $environment_database !== ''
+        ? $environment_database
+        : DB_TEMPLATE_NAME;
+
+    if ($environment_database === false || $environment_database === '') {
+        $result = $control_connection->query("SHOW TABLES LIKE 'school_portal_settings'");
+        if ($result && $result->num_rows > 0) {
+            $setting = $control_connection->query("SELECT setting_value FROM school_portal_settings WHERE setting_key='template_database' LIMIT 1");
+            if ($setting) {
+                $row = $setting->fetch_assoc();
+                if (!empty($row['setting_value'])) {
+                    $database_name = $row['setting_value'];
+                }
+            }
+        }
+    }
+
+    if (!preg_match('/^[A-Za-z0-9_]{1,64}$/', $database_name) || $database_name === DB_CONTROL_NAME) {
+        throw new RuntimeException('The configured school template database is invalid.');
+    }
+    return $database_name;
+}
+
 try {
-    $master_conn = erp_open_database(DB_NAME);
-    $conn = $master_conn;
+    $master_conn = erp_open_database(DB_CONTROL_NAME);
+    $conn = null;
     $selected_school_code = strtoupper(trim((string)($_SESSION['erp_school_code'] ?? '')));
 
-    if ($selected_school_code !== '') {
+    if ($selected_school_code === ERP_SUPER_ADMIN_CODE) {
+        $conn = $master_conn;
+    } elseif ($selected_school_code !== '') {
         $lookup = $master_conn->prepare(
             'SELECT database_name, status FROM school_portal_schools WHERE school_code=? LIMIT 1'
         );
@@ -49,12 +83,12 @@ try {
             http_response_code(403);
             exit('This school is unavailable or inactive. Contact the Super Admin.');
         }
-        if (!preg_match('/^[A-Za-z0-9_]{1,64}$/', $school['database_name'])) {
+        if (!preg_match('/^[A-Za-z0-9_]{1,64}$/', $school['database_name']) || $school['database_name'] === DB_CONTROL_NAME) {
             throw new RuntimeException('The school database configuration is invalid.');
         }
-        if ($school['database_name'] !== DB_NAME) {
-            $conn = erp_open_database($school['database_name']);
-        }
+        $conn = erp_open_database($school['database_name']);
+    } else {
+        $conn = erp_open_database(erp_template_database($master_conn));
     }
 } catch (Throwable $exception) {
     error_log('School ERP database routing failed: ' . $exception->getMessage());

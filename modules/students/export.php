@@ -1,53 +1,30 @@
 <?php
-session_start();
+require_once '../../config/config.php';
+require_once '../../config/database.php';
+require_once '../../includes/access.php';
+require_once '../../includes/office.php';
 
-// User must be logged in
-if (!isset($_SESSION['user_id'])) {
-    header("Location: ../../login.php");
-    exit;
+access_require_roles(array('Admin', 'Teacher'));
+access_require_feature($conn, 'student_records');
+$conn->set_charset('utf8mb4');
+office_ensure_schema($conn);
+
+$filters = office_student_filters();
+$students = office_fetch_students($conn, $filters, access_is_teacher());
+$headers = array('Admission No', 'Registration No', 'Student Name', 'Class', 'Section', 'Roll No', 'Gender', 'Father Name', 'Father Mobile', 'Status');
+$rows = array();
+foreach ($students as $student) {
+    $rows[] = array(
+        'Admission No' => $student['admission_no'],
+        'Registration No' => $student['registration_no'],
+        'Student Name' => $student['student_name'],
+        'Class' => $student['class_name'],
+        'Section' => $student['section_name'],
+        'Roll No' => $student['roll_no'],
+        'Gender' => $student['gender'],
+        'Father Name' => $student['father_name'],
+        'Father Mobile' => $student['father_mobile'],
+        'Status' => ((int)$student['status'] === 1) ? 'Active' : 'Inactive'
+    );
 }
-
-include('../../includes/header.php');
-include('../../includes/navbar.php');
-include('../../includes/sidebar.php');
-?>
-
-<!-- Content Wrapper -->
-<div class="content-wrapper">
-
-    <!-- Page Header -->
-    <section class="content-header">
-        <div class="container-fluid">
-
-            <h1>Dashboard</h1>
-
-        </div>
-    </section>
-
-    <!-- Main Content -->
-    <section class="content">
-
-        <div class="container-fluid">
-
-            <div class="alert alert-success">
-
-                <h4>
-                    Welcome,
-                    <?php echo $_SESSION['full_name']; ?>
-                </h4>
-
-                <p>
-                    Oasis Public School ERP Dashboard is working successfully.
-                </p>
-
-            </div>
-
-        </div>
-
-    </section>
-
-</div>
-
-<?php
-include('../../includes/footer.php');
-?>
+office_download_spreadsheet('students-' . date('Ymd') . '.csv', $headers, $rows);

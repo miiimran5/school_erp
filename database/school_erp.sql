@@ -321,6 +321,7 @@ INSERT INTO `sections` (`id`, `section_name`, `status`, `created_at`) VALUES
 CREATE TABLE `students` (
   `id` int(11) NOT NULL,
   `admission_no` varchar(30) NOT NULL,
+  `registration_no` varchar(40) DEFAULT NULL,
   `admission_date` date NOT NULL,
   `class_id` int(11) NOT NULL,
   `section_id` int(11) NOT NULL,
@@ -341,12 +342,15 @@ CREATE TABLE `students` (
   `guardian_mobile` varchar(15) DEFAULT NULL,
   `alternate_mobile` varchar(15) DEFAULT NULL,
   `address` text DEFAULT NULL,
+  `previous_school` varchar(150) DEFAULT NULL,
   `city` varchar(100) DEFAULT NULL,
   `district` varchar(100) DEFAULT NULL,
   `state` varchar(100) DEFAULT NULL,
   `pincode` varchar(10) DEFAULT NULL,
   `house` varchar(50) DEFAULT NULL,
   `transport` varchar(50) DEFAULT NULL,
+  `parking` tinyint(1) NOT NULL DEFAULT 0,
+  `practical` tinyint(1) NOT NULL DEFAULT 0,
   `game` varchar(100) DEFAULT NULL,
   `concession` decimal(10,2) DEFAULT 0.00,
   `medical_information` text DEFAULT NULL,
@@ -573,7 +577,9 @@ INSERT INTO `school_settings` (`setting_key`, `setting_value`) VALUES
 ('school_email', ''),
 ('school_logo', ''),
 ('school_timezone', 'Asia/Kolkata'),
-('academic_session', '');
+('academic_session', ''),
+('bonafide_certificate_text', 'This is to certify that {gender_title} {student_name}, {gender_pronoun_is} a bonafide student of {school_name}. {gender_pronoun_cap} is studying in Class {class}{section} during the academic session {session}. {gender_possessive_cap} father''s name is {father_name}. Admission / Registration No. of the student is {admission_no}.'),
+('leaving_certificate_text', 'This is to certify that {gender_title} {student_name}, {gender_child} of {father_name}, was a student of {school_name}. {gender_pronoun_cap} studied in Class {class}{section} (Admission / Registration No. {admission_no}) and left the school on {leaving_date}. Reason for leaving: {reason}. According to the school records {gender_possessive} date of birth is {dob}.');
 
 CREATE TABLE `school_portal_schools` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
@@ -963,6 +969,18 @@ CREATE TABLE IF NOT EXISTS `role_feature_permissions` (
   KEY `idx_role_feature_enabled` (`account_type`,`enabled`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+CREATE TABLE IF NOT EXISTS `teacher_feature_permissions` (
+  `teacher_id` int(11) NOT NULL,
+  `feature_key` varchar(60) NOT NULL,
+  `enabled` tinyint(1) NOT NULL DEFAULT 0,
+  `updated_by` int(11) DEFAULT NULL,
+  `updated_at` timestamp NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp(),
+  PRIMARY KEY (`teacher_id`,`feature_key`),
+  KEY `idx_teacher_feature_enabled` (`feature_key`,`enabled`),
+  CONSTRAINT `fk_teacher_feature_permission_teacher`
+    FOREIGN KEY (`teacher_id`) REFERENCES `teachers` (`id`) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 CREATE TABLE IF NOT EXISTS `study_resources` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `resource_type` enum('Study Material','Syllabus','Time Table','Date Sheet') NOT NULL,
@@ -1009,6 +1027,47 @@ CREATE TABLE IF NOT EXISTS `portal_content_attachments` (
   KEY `idx_portal_attachment_homework` (`homework_id`),
   CONSTRAINT `fk_portal_attachment_announcement` FOREIGN KEY (`announcement_id`) REFERENCES `portal_announcements` (`id`) ON UPDATE CASCADE ON DELETE CASCADE,
   CONSTRAINT `fk_portal_attachment_homework` FOREIGN KEY (`homework_id`) REFERENCES `portal_homework` (`id`) ON UPDATE CASCADE ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `admission_inquiries` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_name` varchar(100) NOT NULL,
+  `class_id` int(11) NOT NULL,
+  `mobile` varchar(15) NOT NULL,
+  `father_name` varchar(100) NOT NULL,
+  `address` text DEFAULT NULL,
+  `previous_school` varchar(150) DEFAULT NULL,
+  `status` enum('Open','Admitted','Closed') NOT NULL DEFAULT 'Open',
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_inquiry_class_status` (`class_id`,`status`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `calendar_events` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `event_date` date NOT NULL,
+  `title` varchar(150) NOT NULL,
+  `notes` varchar(255) DEFAULT NULL,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_calendar_event_date` (`event_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS `school_leaving_certificates` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `student_id` int(11) NOT NULL,
+  `leaving_date` date NOT NULL,
+  `reason` varchar(255) DEFAULT NULL,
+  `last_class_id` int(11) DEFAULT NULL,
+  `certificate_no` varchar(50) DEFAULT NULL,
+  `mark_inactive` tinyint(1) NOT NULL DEFAULT 1,
+  `created_by` int(11) DEFAULT NULL,
+  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
+  PRIMARY KEY (`id`),
+  KEY `idx_leaving_student` (`student_id`),
+  CONSTRAINT `fk_school_leaving_student` FOREIGN KEY (`student_id`) REFERENCES `students` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 COMMIT;
 

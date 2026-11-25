@@ -11,9 +11,9 @@ if (!access_is_super_admin()) {
 }
 $current_database_result = $master_conn->query('SELECT DATABASE() AS database_name');
 $current_database = $current_database_result ? (string)$current_database_result->fetch_assoc()['database_name'] : '';
-if ($current_database !== DB_NAME || $conn !== $master_conn) {
+if ($current_database !== DB_CONTROL_NAME || $conn !== $master_conn || (string)($_SESSION['erp_school_code'] ?? '') !== ERP_SUPER_ADMIN_CODE) {
     http_response_code(403);
-    exit('School management is available only from the primary school account.');
+    exit('School management is available only from the dedicated Super Admin portal.');
 }
 $conn->set_charset('utf8mb4');
 if (empty($_SESSION['school_portal_csrf'])) {
@@ -40,7 +40,7 @@ function school_portal_table_exists($conn, $table)
     return $exists;
 }
 
-function school_portal_clone_schema($source, $database_name, $copy_school_setup)
+function school_portal_clone_schema($source, $source_database, $database_name, $copy_school_setup)
 {
     $tables_result = $source->query("SELECT table_name FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type='BASE TABLE' AND table_name<>'school_portal_schools' ORDER BY table_name");
     if (!$tables_result) {
@@ -163,7 +163,7 @@ function school_portal_clone_schema($source, $database_name, $copy_school_setup)
                 continue;
             }
             $quoted_table = str_replace('`', '``', $table);
-            if (!$tenant->query('INSERT INTO `' . $quoted_table . '` SELECT * FROM `' . DB_NAME . '`.`' . $quoted_table . '`')) {
+            if (!$tenant->query('INSERT INTO `' . $quoted_table . '` SELECT * FROM `' . $source_database . '`.`' . $quoted_table . '`')) {
                 throw new RuntimeException('Unable to copy the selected school setup data: ' . $tenant->error);
             }
         }
@@ -192,10 +192,74 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (!hash_equals((string)$_SESSION['school_portal_csrf'], $token)) {
         $error = 'This form expired. Refresh the page and try again.';
     } elseif (!$registry_ready) {
-        $error = 'Import database/migrations/016_school_database_registry.sql before managing schools.';
+        $error = 'Import database/migrations/023_super_admin_control_plane.sql before managing schools.';
     } else {
-        $action = (string)($_POST['action'] ?? 'save_settings');
-        if ($action === 'toggle_school') {
+        $action = (string)($_POST['action'] ?? '');
+        if ($action === 'delete_school') {
+            $school_id = (int)($_POST['school_id'] ?? 0);
+            $confirmed_code = strtoupper(trim((string)($_POST['confirm_school_code'] ?? '')));
+            $selected = $master_conn->prepare("SELECT id,school_code,database_name,status,is_primary FROM school_portal_schools WHERE id=? LIMIT 1");
+            $school = null;
+            if (!$selected) {
+                $error = 'Unable to prepare the school deletion check.';
+            } else {
+                $selected->bind_param('i', $school_id);
+                if ($selected->execute()) {
+                    $school = $selected->get_result()->fetch_assoc();
+                }
+                $selected->close();
+                if (!$school || (int)$school['is_primary'] === 1 || !in_array($school['status'], array('Active', 'Inactive', 'Failed'), true) || !preg_match('/^[A-Za-z0-9_]{1,64}$/', $school['database_name']) || $school['database_name'] === DB_CONTROL_NAME || in_array(strtolower($school['database_name']), array('information_schema', 'mysql', 'performance_schema', 'sys'), true)) {
+                    $error = 'The selected school cannot be safely deleted.';
+                } elseif ($confirmed_code === '' || !hash_equals(strtoupper($school['school_code']), $confirmed_code)) {
+                    $error = 'Enter the exact school login code to confirm deletion.';
+                } else {
+                    try {
+                        $template_database = erp_template_database($master_conn);
+                        if ($school['database_name'] === $template_database) {
+                            $environment_template = getenv('ERP_TEMPLATE_DB');
+                            if ($environment_template !== false && $environment_template !== '') {
+                                throw new RuntimeException('This school is the configured template database. Change ERP_TEMPLATE_DB before deleting it.');
+                            }
+                            $template_connection = erp_open_database($template_database);
+                            $replacement_template = 'school_erp_template_' . bin2hex(random_bytes(5));
+                            $replacement = school_portal_clone_schema($template_connection, $template_database, $replacement_template, true);
+                            $replacement->close();
+                            $template_connection->close();
+                            $save_template = $master_conn->prepare("INSERT INTO school_portal_settings (setting_key,setting_value) VALUES ('template_database',?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)");
+                            if (!$save_template) {
+                                throw new RuntimeException('Unable to prepare the replacement school template setting.');
+                            }
+                            $save_template->bind_param('s', $replacement_template);
+                            if (!$save_template->execute()) {
+                                $save_template->close();
+                                throw new RuntimeException('Unable to save the replacement school template setting.');
+                            }
+                            $save_template->close();
+                        }
+                        $quoted_database = str_replace('`', '``', $school['database_name']);
+                        if (!$master_conn->query('DROP DATABASE IF EXISTS `' . $quoted_database . '`')) {
+                            throw new RuntimeException('The school database could not be dropped: ' . $master_conn->error);
+                        }
+                        $remove = $master_conn->prepare('DELETE FROM school_portal_schools WHERE id=? AND is_primary=0');
+                        if (!$remove) {
+                            throw new RuntimeException('The school database was deleted, but its registry entry could not be removed.');
+                        }
+                        $remove->bind_param('i', $school_id);
+                        if (!$remove->execute() || $remove->affected_rows !== 1) {
+                            $remove->close();
+                            throw new RuntimeException('The school database was deleted, but its registry entry could not be removed.');
+                        }
+                        $remove->close();
+                        $message = 'School ' . $school['school_code'] . ' and its database have been permanently deleted.';
+                    } catch (Throwable $exception) {
+                        error_log('School deletion failed: ' . $exception->getMessage());
+                        $error = strpos($exception->getMessage(), 'configured template database') !== false
+                            ? $exception->getMessage()
+                            : 'The school could not be deleted. Check MySQL permissions and the server error log.';
+                    }
+                }
+            }
+        } elseif ($action === 'toggle_school') {
             $school_id = (int)($_POST['school_id'] ?? 0);
             $new_status = (string)($_POST['new_status'] ?? '');
             if ($school_id <= 0 || !in_array($new_status, array('Active', 'Inactive'), true)) {
@@ -211,7 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             ? 'School services have been stopped. Its users will be blocked from logging in and from continuing to use the ERP.'
                             : 'School services have been activated. Its users can log in and use the ERP again.';
                     } else {
-                        $error = 'The school could not be updated. The primary school cannot be deactivated.';
+                        $error = 'The school could not be updated. Protected school records cannot be deactivated.';
                     }
                     $stmt->close();
                 }
@@ -243,9 +307,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $registry->close();
 
                     $tenant = null;
+                    $template_connection = null;
                     try {
                         $copy_school_setup = isset($_POST['copy_school_setup']) && $_POST['copy_school_setup'] === '1';
-                        $tenant = school_portal_clone_schema($master_conn, $database_name, $copy_school_setup);
+                        $template_database = erp_template_database($master_conn);
+                        $template_connection = erp_open_database($template_database);
+                        $tenant = school_portal_clone_schema($template_connection, $template_database, $database_name, $copy_school_setup);
+                        $template_connection->close();
+                        $template_connection = null;
                         if (!$copy_school_setup) {
                             $defaults = array(
                                 'school_name' => $school_name,
@@ -312,6 +381,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $active->close();
                         $message = 'School created. Its login code is ' . $school_code . '. Give this code and the admin login details to the school administrator.';
                     } catch (Throwable $exception) {
+                        if ($template_connection instanceof mysqli) {
+                            $template_connection->close();
+                        }
                         if (isset($tenant) && $tenant instanceof mysqli) {
                             $tenant->close();
                         }
@@ -330,7 +402,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error = 'The school could not be created. Check that the database account may create databases and review the server error log.';
                 }
             }
-        } else {
+        } elseif ($action === 'save_settings') {
             $keys = array('app_name', 'school_name', 'school_tagline', 'school_address', 'school_phone', 'school_email', 'school_timezone', 'academic_session');
             $posted = array();
             foreach ($keys as $key) {
@@ -362,10 +434,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     foreach ($posted as $key => $value) {
                         $GLOBALS['school_settings'][$key] = $value;
                     }
-                    $message = 'Primary school settings saved.';
+                    $message = 'Super Admin portal settings saved.';
                 } catch (Throwable $exception) {
                     $conn->rollback();
-                    error_log('Primary school settings update failed: ' . $exception->getMessage());
+                    error_log('Super Admin portal settings update failed: ' . $exception->getMessage());
                     $error = 'School settings could not be saved. Check the server error log.';
                 }
                 if (isset($_FILES['school_logo']) && $_FILES['school_logo']['error'] !== UPLOAD_ERR_NO_FILE) {
@@ -395,7 +467,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     }
                     if ($error === '') {
-                        $message = 'Primary school settings saved.';
+                        $message = 'Super Admin portal settings saved.';
                     }
                 }
             }
@@ -414,6 +486,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             require '../../includes/school.php';
+        } else {
+            $error = 'Choose a valid school management action.';
         }
     }
 }
@@ -442,26 +516,24 @@ if ($registry_ready) {
         <?php if ($error !== ''): ?><div class="alert alert-danger"><?= school_portal_e($error); ?></div><?php endif; ?>
 
         <?php if (!$registry_ready): ?>
-            <div class="alert alert-warning">Import <code>database/migrations/016_school_database_registry.sql</code> into the primary database before adding schools.</div>
+            <div class="alert alert-warning">Import <code>database/migrations/023_super_admin_control_plane.sql</code> to initialize the separate Super Admin database.</div>
         <?php else: ?>
-            <div class="alert alert-info">Each school has a separate database. Use <strong>Stop Services</strong> to set a school to Inactive: this blocks new logins and prevents users with existing sessions from making further ERP requests. Use <strong>Activate Services</strong> to restore access. The primary school cannot be deactivated here. New schools never receive student, employee, login, attendance, payment, or marks records. You can choose whether to copy the primary school's report-card, subject-to-class, exam, fee, and other academic setup. Basic class, section, subject, role, and exam-type lists are prepared for every new school. The configured MySQL account must have permission to create databases and tables.</div>
+            <div class="alert alert-info">Each school is listed separately and uses its own database. Stop Services blocks school logins; Activate Services restores access. New schools do not receive student, employee, login, attendance, payment, or marks data. Academic setup can be copied from the configured template database. Deleting a school permanently drops its database after you enter its exact login code; this cannot be undone. The configured MySQL account must be allowed to create and drop databases.</div>
             <a class="btn btn-outline-primary mb-3" href="<?= BASE_URL; ?>/modules/settings/feature_access.php"><i class="fas fa-user-lock mr-1"></i>Manage Teacher and Student Feature Access</a>
             <div class="card">
                 <div class="card-header bg-primary text-white"><h3 class="card-title">Schools and access</h3></div>
                 <div class="card-body table-responsive p-0">
                     <table class="table table-bordered table-striped mb-0">
-                        <thead><tr><th>School</th><th>Login code</th><th>Database</th><th>Status</th><th>School settings</th><th>Services</th></tr></thead>
+                        <thead><tr><th>School</th><th>Login code</th><th>Database</th><th>Status</th><th>School settings</th><th>Services</th><th>Delete</th></tr></thead>
                         <tbody>
                         <?php foreach ($schools as $school): ?>
                             <tr>
-                                <td><?= school_portal_e($school['school_name']); ?><?= (int)$school['is_primary'] === 1 ? ' (Primary)' : ''; ?></td>
+                                <td><?= school_portal_e($school['school_name']); ?></td>
                                 <td><code><?= school_portal_e($school['school_code']); ?></code></td>
                                 <td><?= school_portal_e($school['database_name']); ?></td>
                                 <td><span class="badge badge-<?= $school['status'] === 'Active' ? 'success' : ($school['status'] === 'Inactive' ? 'secondary' : 'warning'); ?>"><?= school_portal_e($school['status']); ?></span></td>
                                 <td>
-                                    <?php if ((int)$school['is_primary'] === 1): ?>
-                                        <span class="text-muted">Managed below</span>
-                                    <?php elseif (in_array($school['status'], array('Active', 'Inactive'), true)): ?>
+                                    <?php if (in_array($school['status'], array('Active', 'Inactive'), true)): ?>
                                         <a class="btn btn-sm btn-outline-primary" href="school.php?id=<?= (int)$school['id']; ?>">Manage settings</a>
                                     <?php else: ?>—<?php endif; ?>
                                 </td>
@@ -473,6 +545,17 @@ if ($registry_ready) {
                                             <input type="hidden" name="school_id" value="<?= (int)$school['id']; ?>">
                                             <input type="hidden" name="new_status" value="<?= $school['status'] === 'Active' ? 'Inactive' : 'Active'; ?>">
                                             <button class="btn btn-sm btn-<?= $school['status'] === 'Active' ? 'outline-danger' : 'outline-success'; ?>" type="submit" onclick="return confirm('<?= $school['status'] === 'Active' ? 'Stop services for this school? All users will be blocked from the ERP.' : 'Activate services for this school and restore user access?'; ?>');"><?= $school['status'] === 'Active' ? 'Stop Services' : 'Activate Services'; ?></button>
+                                        </form>
+                                    <?php else: ?>—<?php endif; ?>
+                                </td>
+                                <td>
+                                    <?php if ((int)$school['is_primary'] !== 1 && in_array($school['status'], array('Active', 'Inactive', 'Failed'), true)): ?>
+                                        <form method="post" class="d-flex align-items-center" onsubmit="return confirm('Permanently delete this school and drop its database? This cannot be undone.');">
+                                            <input type="hidden" name="csrf_token" value="<?= school_portal_e($_SESSION['school_portal_csrf']); ?>">
+                                            <input type="hidden" name="action" value="delete_school">
+                                            <input type="hidden" name="school_id" value="<?= (int)$school['id']; ?>">
+                                            <input type="text" name="confirm_school_code" class="form-control form-control-sm mr-2" style="max-width:130px" placeholder="Type <?= school_portal_e($school['school_code']); ?>" aria-label="Type exact school code to confirm deletion" required>
+                                            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
                                         </form>
                                     <?php else: ?>—<?php endif; ?>
                                 </td>
@@ -493,7 +576,7 @@ if ($registry_ready) {
                         <div class="form-group col-md-6"><label for="admin_name">School administrator name</label><input id="admin_name" name="admin_name" class="form-control" maxlength="100" required></div>
                         <div class="form-group col-md-6"><label for="admin_username">Administrator login ID</label><input id="admin_username" name="admin_username" class="form-control" minlength="3" maxlength="50" pattern="[A-Za-z0-9._-]+" required><small class="form-text text-muted">Use 3–50 letters, numbers, dots, underscores or hyphens.</small></div>
                         <div class="form-group col-md-6"><label for="admin_password">Temporary administrator password</label><input id="admin_password" name="admin_password" type="password" class="form-control" minlength="10" maxlength="200" autocomplete="new-password" required><small class="form-text text-muted">Use at least 10 characters and give it to the administrator securely.</small></div>
-                        <div class="form-group col-12"><div class="custom-control custom-checkbox"><input type="checkbox" class="custom-control-input" id="copy_school_setup" name="copy_school_setup" value="1" checked><label class="custom-control-label" for="copy_school_setup">Copy academic and fee setup from the primary school</label><small class="form-text text-muted">Copies subjects assigned to classes, exam setup, report-card subjects, fee schedules and lookups; does not copy school contact details.</small></div></div>
+                        <div class="form-group col-12"><div class="custom-control custom-checkbox"><input type="checkbox" class="custom-control-input" id="copy_school_setup" name="copy_school_setup" value="1" checked><label class="custom-control-label" for="copy_school_setup">Copy academic and fee setup from the template school</label><small class="form-text text-muted">Copies subjects assigned to classes, exam setup, report-card subjects, fee schedules and lookups; does not copy student, staff, or account records.</small></div></div>
                     </div></div>
                     <div class="card-footer"><button type="submit" class="btn btn-success"><i class="fas fa-plus mr-1"></i>Create isolated school database</button></div>
                 </form>
@@ -501,12 +584,12 @@ if ($registry_ready) {
         <?php endif; ?>
 
         <div class="card">
-            <div class="card-header bg-primary text-white"><h3 class="card-title">Primary school identity and settings</h3></div>
+            <div class="card-header bg-primary text-white"><h3 class="card-title">Super Admin application settings</h3></div>
             <form method="post" enctype="multipart/form-data">
                 <input type="hidden" name="csrf_token" value="<?= school_portal_e($_SESSION['school_portal_csrf']); ?>">
                 <input type="hidden" name="action" value="save_settings">
                 <div class="card-body"><div class="row">
-                    <?php foreach (array('app_name'=>'ERP Name','school_name'=>'School Name','school_tagline'=>'Tagline','school_phone'=>'Phone','school_email'=>'Email','academic_session'=>'Academic Session') as $key=>$label): ?>
+                    <?php foreach (array('app_name'=>'ERP Name','school_name'=>'Super Admin portal name','school_tagline'=>'Portal tagline','school_phone'=>'Contact phone','school_email'=>'Contact email','academic_session'=>'Academic Session') as $key=>$label): ?>
                         <div class="form-group col-md-4"><label for="<?= school_portal_e($key); ?>"><?= school_portal_e($label); ?></label><input id="<?= school_portal_e($key); ?>" name="<?= school_portal_e($key); ?>" class="form-control" value="<?= school_portal_e($settings[$key]); ?>" <?= in_array($key, array('app_name', 'school_name'), true) ? 'required' : ''; ?>></div>
                     <?php endforeach; ?>
                     <div class="form-group col-md-4"><label for="school_timezone">Timezone</label><select id="school_timezone" name="school_timezone" class="form-control"><?php foreach (array('Asia/Kolkata','Asia/Dubai','Asia/Dhaka','Asia/Karachi','UTC') as $zone): ?><option value="<?= school_portal_e($zone); ?>" <?= $settings['school_timezone']===$zone?'selected':''; ?>><?= school_portal_e($zone); ?></option><?php endforeach; ?></select></div>
@@ -515,7 +598,7 @@ if ($registry_ready) {
                     <div class="form-group col-md-4"><label for="app_logo">ERP Logo</label><input id="app_logo" type="file" name="app_logo" class="form-control-file" accept=".jpg,.jpeg,.png,.webp"><small class="form-text text-muted">Optional; JPG, PNG, or WEBP up to 5 MB. Leave empty to keep the current logo.</small><img class="d-block mt-2" src="<?= BASE_URL; ?>/uploads/branding/<?= rawurlencode(basename($settings['app_logo'])); ?>" alt="Current ERP logo" style="max-width:180px;max-height:90px;object-fit:contain"></div>
                     <div class="form-group col-md-8"><label for="login_background">Home Page Background</label><input id="login_background" type="file" name="login_background" class="form-control-file" accept=".jpg,.jpeg,.png,.webp"><small class="form-text text-muted">Optional; JPG, PNG, or WEBP up to 5 MB. Leave empty to keep the current background.</small><img class="d-block mt-2" src="<?= BASE_URL; ?>/uploads/branding/<?= rawurlencode(basename($settings['login_background'])); ?>" alt="Current home page background" style="max-width:260px;max-height:100px;object-fit:cover"></div>
                 </div></div>
-                <div class="card-footer"><button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i>Save primary school settings</button></div>
+                <div class="card-footer"><button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i>Save application settings</button></div>
             </form>
         </div>
     </div></section>

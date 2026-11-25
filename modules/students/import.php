@@ -3,6 +3,7 @@ require_once '../../config/config.php';
 require_once '../../config/database.php';
 require_once '../../includes/access.php';
 require_once '../../includes/parents.php';
+require_once '../../includes/office.php';
 
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
@@ -19,6 +20,7 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
 }
 
 $conn->set_charset('utf8mb4');
+office_ensure_schema($conn);
 
 function import_e($value)
 {
@@ -26,11 +28,11 @@ function import_e($value)
 }
 
 $template_headers = array(
-    'admission_no', 'admission_date', 'roll_no', 'class_name', 'section_name',
+    'admission_no', 'registration_no', 'admission_date', 'roll_no', 'class_name', 'section_name',
     'student_name', 'gender', 'dob', 'blood_group', 'category', 'father_name',
     'father_occupation', 'father_mobile', 'mother_name', 'mother_occupation',
     'mother_mobile', 'guardian_name', 'guardian_mobile', 'alternate_mobile',
-    'address', 'city', 'district', 'state', 'pincode', 'house', 'transport',
+    'address', 'previous_school', 'city', 'district', 'state', 'pincode', 'house', 'transport',
     'game', 'concession', 'medical_information', 'additional_subject',
     'sibling_admission_no', 'status'
 );
@@ -108,15 +110,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $conn->begin_transaction();
             $insert = $conn->prepare(
                 "INSERT INTO students
-                (admission_no, admission_date, class_id, section_id, house_id, roll_no,
+                (admission_no, registration_no, admission_date, class_id, section_id, house_id, roll_no,
                  student_name, gender, dob, blood_group, category, father_name,
                  father_occupation, father_mobile, mother_name, mother_occupation,
                  mother_mobile, guardian_name, guardian_mobile, alternate_mobile,
-                 address, city, district, state, pincode, house, transport, game,
+                 address, previous_school, city, district, state, pincode, house, transport, game,
                  concession, medical_information, status, additional_subject_id)
-                VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                VALUES (?, NULLIF(?, ''), ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                        ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
             );
+            if (!$insert) {
+                $errors[] = 'Unable to prepare the student import: ' . $conn->error;
+                $conn->rollback();
+            } else {
 
             $line = 1;
             while (($csv_row = fgetcsv($handle)) !== false) {
@@ -128,6 +134,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $row = array_combine($template_headers, array_slice($csv_row, 0, count($template_headers)));
                 foreach ($row as $key => $value) {
                     $row[$key] = trim((string)$value);
+                }
+
+                if (strlen($row['registration_no']) > 40 || strlen($row['previous_school']) > 150) {
+                    $errors[] = 'Line ' . $line . ': registration_no must be 40 characters or fewer and previous_school must be 150 characters or fewer.';
+                    continue;
                 }
 
                 $class_key = strtolower($row['class_name']);
@@ -175,18 +186,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
                 $values = array(
-                    $row['admission_no'], $row['admission_date'], $class_id,
+                    $row['admission_no'], $row['registration_no'], $row['admission_date'], $class_id,
                     $section_ids[$section_key], $row['roll_no'], $row['student_name'],
                     $row['gender'], $row['dob'], $row['blood_group'], $row['category'],
                     $row['father_name'], $row['father_occupation'], $row['father_mobile'],
                     $row['mother_name'], $row['mother_occupation'], $row['mother_mobile'],
                     $row['guardian_name'], $row['guardian_mobile'], $row['alternate_mobile'],
-                    $row['address'], $row['city'], $row['district'], $row['state'],
+                    $row['address'], $row['previous_school'], $row['city'], $row['district'], $row['state'],
                     $row['pincode'], $row['house'], $row['transport'], $row['game'],
                     $concession, $row['medical_information'], $status, $additional_subject_id
                 );
-                $types = 'ssii' . str_repeat('s', 23) . 'dsii';
-                $insert->bind_param($types, ...$values);
+                $types = str_repeat('s', 3) . 'ii' . str_repeat('s', 24) . 'dsii';
+                $bind_values = array($types);
+                foreach ($values as $index => $value) {
+                    $bind_values[] = &$values[$index];
+                }
+                call_user_func_array(array($insert, 'bind_param'), $bind_values);
                 if (!$insert->execute()) {
                     $errors[] = 'Line ' . $line . ': ' . $insert->error;
                 } else {
@@ -214,6 +229,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $imported = 0;
             }
             $insert->close();
+            }
         }
         if (is_resource($handle)) {
             fclose($handle);

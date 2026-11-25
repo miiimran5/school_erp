@@ -26,8 +26,47 @@ if (isset($_POST['login'])) {
     $school_code = strtoupper(trim((string)($_POST['school_code'] ?? '')));
     $login_conn = $master_conn;
     $school_valid = true;
+    $user = null;
+    $is_super_admin = $school_registry_available && $school_code === ERP_SUPER_ADMIN_CODE;
 
-    if ($school_registry_available) {
+    if ($is_super_admin) {
+        $stmt = $master_conn->prepare('SELECT id,full_name,username,password_hash,status FROM super_admin_accounts WHERE username=? AND status=1 LIMIT 1');
+        if (!$stmt) {
+            $school_valid = false;
+            $message = 'Super Admin login is unavailable. Check the control database setup.';
+        } else {
+            $stmt->bind_param('s', $username);
+            if ($stmt->execute()) {
+                $candidate = $stmt->get_result()->fetch_assoc();
+                if ($candidate) {
+                    $password_info = password_get_info($candidate['password_hash']);
+                    $valid_password = $password_info['algo'] !== null
+                        ? password_verify($password_input, $candidate['password_hash'])
+                        : hash_equals((string)$candidate['password_hash'], md5($password_input));
+                    if ($valid_password) {
+                        $user = array(
+                            'id' => $candidate['id'],
+                            'role_id' => 1,
+                            'full_name' => $candidate['full_name'],
+                            'username' => $candidate['username'],
+                            'account_type' => 'Super Admin',
+                            'linked_id' => null
+                        );
+                        if ($password_info['algo'] === null) {
+                            $upgraded_password = password_hash($password_input, PASSWORD_DEFAULT);
+                            $upgrade = $master_conn->prepare('UPDATE super_admin_accounts SET password_hash=? WHERE id=?');
+                            if ($upgrade) {
+                                $upgrade->bind_param('si', $upgraded_password, $candidate['id']);
+                                $upgrade->execute();
+                                $upgrade->close();
+                            }
+                        }
+                    }
+                }
+            }
+            $stmt->close();
+        }
+    } elseif ($school_registry_available) {
         $school_stmt = $master_conn->prepare("SELECT database_name FROM school_portal_schools WHERE school_code=? AND status='Active' LIMIT 1");
         if (!$school_stmt) {
             $school_valid = false;
@@ -37,10 +76,10 @@ if (isset($_POST['login'])) {
             $school_stmt->execute();
             $school_record = $school_stmt->get_result()->fetch_assoc();
             $school_stmt->close();
-            if (!$school_record || !preg_match('/^[A-Za-z0-9_]{1,64}$/', $school_record['database_name'])) {
+            if (!$school_record || !preg_match('/^[A-Za-z0-9_]{1,64}$/', $school_record['database_name']) || $school_record['database_name'] === DB_CONTROL_NAME) {
                 $school_valid = false;
                 $message = 'Select an active school.';
-            } elseif ($school_record['database_name'] !== DB_NAME) {
+            } else {
                 try {
                     $login_conn = erp_open_database($school_record['database_name']);
                 } catch (Throwable $exception) {
@@ -52,15 +91,14 @@ if (isset($_POST['login'])) {
         }
     }
 
-    $user = null;
-    if ($school_valid) {
+    if ($school_valid && !$user && !$is_super_admin) {
         $conn = $login_conn;
-        $stmt = $conn->prepare('SELECT id, role_id, full_name, username, password, account_type, linked_id FROM users WHERE username=? AND status=1 LIMIT 1');
+        $stmt = $conn->prepare('SELECT id, role_id, full_name, username, password, account_type, linked_id FROM users WHERE username=? AND status=1 AND role_id<>1 LIMIT 1');
         if ($stmt) {
             $stmt->bind_param('s', $username);
             if ($stmt->execute()) {
                 $candidate = $stmt->get_result()->fetch_assoc();
-                if ($candidate) {
+                if ($candidate && (int)$candidate['role_id'] !== 1) {
                     $password_info = password_get_info($candidate['password']);
                     if ($password_info['algo'] !== null) {
                         if (password_verify($password_input, $candidate['password'])) {
@@ -113,6 +151,8 @@ if (isset($_POST['login'])) {
             $account_type = 'Student';
         } elseif ((int)$user['role_id'] === 5) {
             $account_type = 'Teacher';
+        } elseif ((int)$user['role_id'] === 1) {
+            $account_type = 'Super Admin';
         } elseif ($account_type === '') {
             $account_type = 'Admin';
         }
@@ -123,9 +163,11 @@ if (isset($_POST['login'])) {
         $_SESSION['role_id']   = $user['role_id'];
         $_SESSION['account_type'] = $account_type;
         $_SESSION['linked_id'] = $user['linked_id'] ?? null;
-        $_SESSION['erp_school_code'] = $school_registry_available ? $school_code : '';
+        $_SESSION['erp_school_code'] = $is_super_admin
+            ? ERP_SUPER_ADMIN_CODE
+            : ($school_registry_available ? $school_code : '');
 
-        header("Location: " . ($account_type === 'Student' ? 'modules/portal/student.php' : ($account_type === 'Parent' ? 'modules/portal/parent.php' : ($account_type === 'Teacher' ? 'modules/portal/teacher.php' : 'modules/dashboard/index.php'))));
+        header("Location: " . ($account_type === 'Super Admin' ? 'modules/settings/index.php' : ($account_type === 'Student' ? 'modules/portal/student.php' : ($account_type === 'Parent' ? 'modules/portal/parent.php' : ($account_type === 'Teacher' ? 'modules/portal/teacher.php' : 'modules/dashboard/index.php')))));
         exit;
 
     } elseif ($message === '') {
@@ -313,7 +355,7 @@ button:hover{
     <h2><?= school_e(school_setting('app_name', APP_NAME)); ?></h2>
 
     <?php if (!$school_registry_available && isset($_POST['login'])): ?>
-        <div class="error">Multi-school login is not initialized. The Super Admin must import migration 016 into the primary database.</div>
+        <div class="error">Super Admin login is not initialized. Import database/migrations/023_super_admin_control_plane.sql and configure the control database.</div>
     <?php endif; ?>
 
     <form method="post" autocomplete="off">
@@ -321,7 +363,8 @@ button:hover{
         <?php if ($school_registry_available): ?>
         <label for="school_code" class="sr-only">School</label>
         <select name="school_code" id="school_code" required style="width:100%; padding:12px; margin-top:12px; border:1px solid #d8e0ec; border-radius:9px; font-size:15px;">
-            <option value="">Select school</option>
+            <option value="">Select portal</option>
+            <option value="<?= school_e(ERP_SUPER_ADMIN_CODE); ?>" <?= strtoupper((string)($_POST['school_code'] ?? '')) === ERP_SUPER_ADMIN_CODE ? 'selected' : ''; ?>>Super Admin Portal</option>
             <?php foreach ($school_options as $school_option): ?>
                 <option value="<?= school_e($school_option['school_code']); ?>" <?= strtoupper((string)($_POST['school_code'] ?? '')) === $school_option['school_code'] ? 'selected' : ''; ?>>
                     <?= school_e($school_option['school_name']); ?>

@@ -118,6 +118,14 @@
 
                 <?php if (access_is_admin()): ?>
                 <li class="nav-item">
+                    <a href="<?= BASE_URL; ?>/modules/inquiries/index.php" class="nav-link">
+                        <i class="nav-icon fas fa-clipboard-list"></i><p>Admission Inquiries</p>
+                    </a>
+                </li>
+                <?php endif; ?>
+
+                <?php if (access_is_admin()): ?>
+                <li class="nav-item">
                     <a href="<?= BASE_URL; ?>/modules/exams/promote_students.php" class="nav-link">
                         <i class="nav-icon fas fa-user-graduate"></i><p>Promote Students</p>
                     </a>
@@ -200,6 +208,11 @@
                 <?php if ((access_is_student() || access_is_parent()) && access_feature_allowed($conn, 'date_sheets')): ?>
                 <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/resources/index.php?type=Date%20Sheet" class="nav-link"><i class="nav-icon fas fa-calendar-alt"></i><p>Date Sheets</p></a></li>
                 <?php endif; ?>
+                <li class="nav-item">
+                    <a href="<?= BASE_URL; ?>/modules/calendar/index.php" class="nav-link">
+                        <i class="nav-icon far fa-calendar-alt"></i><p>School Calendar</p>
+                    </a>
+                </li>
 
 
                 <!-- =================================================
@@ -289,7 +302,7 @@
                         <?php if (access_feature_allowed($conn, 'exams')): ?>
                         <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/exams/mark_status.php" class="nav-link"><i class="far fa-circle nav-icon"></i><p>Marks Entry Status</p></a></li>
                         <?php endif; ?>
-                        <?php if (access_is_admin()): ?>
+                        <?php if (access_is_admin() || (access_is_teacher() && access_feature_allowed($conn, 'exams'))): ?>
                         <li class="nav-item"><a href="<?= BASE_URL; ?>/modules/exams/grading.php" class="nav-link"><i class="far fa-circle nav-icon"></i><p>Grading System</p></a></li>
                         <?php endif; ?>
                         <?php if (access_feature_allowed($conn, 'date_sheets')): ?>

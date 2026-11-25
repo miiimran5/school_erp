@@ -17,11 +17,14 @@ if (!isset($GLOBALS['school_settings'])) {
         'school_timezone' => 'Asia/Kolkata',
         'academic_session' => ''
     );
-    $result = $conn->query('SELECT setting_key, setting_value FROM school_settings');
-    if ($result) {
-        while ($row = $result->fetch_assoc()) {
-            if (array_key_exists($row['setting_key'], $GLOBALS['school_settings'])) {
-                $GLOBALS['school_settings'][$row['setting_key']] = $row['setting_value'];
+    $settings_table = $conn->query("SHOW TABLES LIKE 'school_settings'");
+    if ($settings_table && $settings_table->num_rows > 0) {
+        $result = $conn->query('SELECT setting_key, setting_value FROM school_settings');
+        if ($result) {
+            while ($row = $result->fetch_assoc()) {
+                if (array_key_exists($row['setting_key'], $GLOBALS['school_settings'])) {
+                    $GLOBALS['school_settings'][$row['setting_key']] = $row['setting_value'];
+                }
             }
         }
     }
