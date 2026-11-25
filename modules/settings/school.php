@@ -50,12 +50,76 @@ $keys = array('app_name', 'school_name', 'school_tagline', 'school_address', 'sc
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string)($_POST['csrf_token'] ?? '');
+    $action = (string)($_POST['action'] ?? '');
     $values = array();
     foreach ($keys as $key) {
         $values[$key] = trim((string)($_POST[$key] ?? ''));
     }
     if (!hash_equals((string)$_SESSION['school_identity_csrf'], $token)) {
         $error = 'This form expired. Refresh the page and try again.';
+    } elseif ($action === 'save_school_admin') {
+        $admin_id = filter_var($_POST['admin_id'] ?? 0, FILTER_VALIDATE_INT);
+        $admin_name = trim((string)($_POST['admin_name'] ?? ''));
+        $admin_username = trim((string)($_POST['admin_username'] ?? ''));
+        $admin_password = (string)($_POST['admin_password'] ?? '');
+        if ($admin_id === false || $admin_id <= 0 || $admin_name === '' || strlen($admin_name) > 100 || !preg_match('/^[A-Za-z0-9._-]{3,50}$/', $admin_username) || ($admin_password !== '' && (strlen($admin_password) < 10 || strlen($admin_password) > 200))) {
+            $error = 'Enter a name, a login ID (3–50 letters/numbers/._-) and, if resetting it, a password of 10–200 characters.';
+        } else {
+            try {
+                $admin_check = $tenant->prepare("SELECT id FROM users WHERE id=? AND role_id IN (2,3) AND account_type='Admin' LIMIT 1");
+                if (!$admin_check) {
+                    throw new RuntimeException('Unable to verify the selected school administrator.');
+                }
+                $admin_check->bind_param('i', $admin_id);
+                if (!$admin_check->execute() || $admin_check->get_result()->num_rows !== 1) {
+                    $admin_check->close();
+                    throw new RuntimeException('The selected school administrator no longer exists.');
+                }
+                $admin_check->close();
+
+                $username_check = $tenant->prepare('SELECT id FROM users WHERE username=? AND id<>? LIMIT 1');
+                if (!$username_check) {
+                    throw new RuntimeException('Unable to check whether the login ID is already in use.');
+                }
+                $username_check->bind_param('si', $admin_username, $admin_id);
+                if (!$username_check->execute()) {
+                    $username_check->close();
+                    throw new RuntimeException('Unable to check whether the login ID is already in use.');
+                }
+                $username_taken = $username_check->get_result()->num_rows > 0;
+                $username_check->close();
+                if ($username_taken) {
+                    throw new RuntimeException('That login ID is already in use in this school. Choose a different one.');
+                }
+
+                if ($admin_password === '') {
+                    $update_admin = $tenant->prepare("UPDATE users SET full_name=?,username=? WHERE id=? AND role_id IN (2,3) AND account_type='Admin'");
+                    if ($update_admin) {
+                        $update_admin->bind_param('ssi', $admin_name, $admin_username, $admin_id);
+                    }
+                } else {
+                    $password_hash = password_hash($admin_password, PASSWORD_DEFAULT);
+                    $update_admin = $tenant->prepare("UPDATE users SET full_name=?,username=?,password=? WHERE id=? AND role_id IN (2,3) AND account_type='Admin'");
+                    if ($update_admin) {
+                        $update_admin->bind_param('sssi', $admin_name, $admin_username, $password_hash, $admin_id);
+                    }
+                }
+                if (!$update_admin) {
+                    throw new RuntimeException('Unable to prepare the school administrator update.');
+                }
+                if (!$update_admin->execute()) {
+                    $update_admin->close();
+                    throw new RuntimeException('Unable to save the school administrator login.');
+                }
+                $update_admin->close();
+                $message = 'School administrator details saved. The new login ID is ' . $admin_username . '.';
+            } catch (Throwable $exception) {
+                error_log('School administrator update failed: ' . $exception->getMessage());
+                $error = $exception->getMessage();
+            }
+        }
+    } elseif ($action !== 'save_school_settings') {
+        $error = 'Choose a valid school settings action.';
     } elseif ($values['app_name'] === '' || strlen($values['app_name']) > 100 || $values['school_name'] === '' || strlen($values['school_name']) > 150 || strlen($values['school_tagline']) > 150 || strlen($values['school_phone']) > 50 || strlen($values['academic_session']) > 100) {
         $error = 'Enter a valid ERP name, school name, tagline, phone number, and academic session.';
     } elseif ($values['school_email'] !== '' && (!filter_var($values['school_email'], FILTER_VALIDATE_EMAIL) || strlen($values['school_email']) > 150)) {
@@ -137,23 +201,35 @@ if ($result) {
     }
     $result->free();
 }
+$admin_accounts = array();
+$admin_result = $tenant->query("SELECT id,full_name,username,status FROM users WHERE role_id IN (2,3) AND account_type='Admin' ORDER BY full_name,id");
+if ($admin_result) {
+    while ($row = $admin_result->fetch_assoc()) {
+        $admin_accounts[] = $row;
+    }
+    $admin_result->free();
+} else {
+    error_log('School administrator listing failed: ' . $tenant->error);
+    $error = $error ?: 'School administrator accounts could not be loaded.';
+}
 $tenant->close();
 ?>
 <?php include '../../includes/header.php'; ?>
 <?php include '../../includes/navbar.php'; ?>
 <?php include '../../includes/sidebar.php'; ?>
 <div class="content-wrapper">
-    <section class="content-header"><div class="container-fluid"><h1><i class="fas fa-school mr-2"></i>School Settings</h1></div></section>
+    <section class="content-header"><div class="container-fluid"><h1><i class="fas fa-school mr-2"></i>Edit school particulars and logins</h1></div></section>
     <section class="content"><div class="container-fluid">
         <a class="btn btn-secondary mb-3" href="index.php"><i class="fas fa-arrow-left mr-1"></i>Back to Super Admin Portal</a>
         <div class="alert alert-info">Editing <strong><?= school_settings_e($school['school_name']); ?></strong> (<code><?= school_settings_e($school['school_code']); ?></code>). The school has a separate database; changes here apply only to this school.</div>
         <?php if ($message !== ''): ?><div class="alert alert-success"><?= school_settings_e($message); ?></div><?php endif; ?>
         <?php if ($error !== ''): ?><div class="alert alert-danger"><?= school_settings_e($error); ?></div><?php endif; ?>
         <div class="card">
-            <div class="card-header bg-primary text-white"><h3 class="card-title">School identity and academic settings</h3></div>
+            <div class="card-header bg-primary text-white"><h3 class="card-title">School particulars and academic settings</h3></div>
             <form method="post" enctype="multipart/form-data">
                 <input type="hidden" name="school_id" value="<?= (int)$school['id']; ?>">
                 <input type="hidden" name="csrf_token" value="<?= school_settings_e($_SESSION['school_identity_csrf']); ?>">
+                <input type="hidden" name="action" value="save_school_settings">
                 <div class="card-body"><div class="row">
                     <?php foreach (array('app_name'=>'ERP name','school_name'=>'School name','school_tagline'=>'Tagline','school_phone'=>'Phone','school_email'=>'Email','academic_session'=>'Academic session') as $key=>$label): ?>
                         <div class="form-group col-md-4"><label for="<?= school_settings_e($key); ?>"><?= school_settings_e($label); ?></label><input id="<?= school_settings_e($key); ?>" name="<?= school_settings_e($key); ?>" class="form-control" value="<?= school_settings_e($settings[$key]); ?>" <?= in_array($key, array('app_name', 'school_name'), true) ? 'required' : ''; ?>></div>
@@ -165,6 +241,28 @@ $tenant->close();
                 </div></div>
                 <div class="card-footer"><button type="submit" class="btn btn-success"><i class="fas fa-save mr-1"></i>Save school settings</button></div>
             </form>
+        </div>
+        <div class="card">
+            <div class="card-header bg-info text-white"><h3 class="card-title">School administrator login accounts</h3></div>
+            <div class="card-body">
+                <p class="text-muted">Change an administrator's name or login ID, or set a new password. Leave the password blank to keep it unchanged. Passwords are never displayed.</p>
+                <?php if (!$admin_accounts): ?><div class="alert alert-warning mb-0">No school administrator account was found for this school.</div><?php endif; ?>
+                <?php foreach ($admin_accounts as $admin): ?>
+                    <form method="post" class="border rounded p-3 mb-3">
+                        <input type="hidden" name="school_id" value="<?= (int)$school['id']; ?>">
+                        <input type="hidden" name="csrf_token" value="<?= school_settings_e($_SESSION['school_identity_csrf']); ?>">
+                        <input type="hidden" name="action" value="save_school_admin">
+                        <input type="hidden" name="admin_id" value="<?= (int)$admin['id']; ?>">
+                        <div class="form-row">
+                            <div class="form-group col-md-4"><label for="admin-name-<?= (int)$admin['id']; ?>">Administrator name</label><input id="admin-name-<?= (int)$admin['id']; ?>" name="admin_name" class="form-control" maxlength="100" value="<?= school_settings_e($admin['full_name']); ?>" required></div>
+                            <div class="form-group col-md-4"><label for="admin-username-<?= (int)$admin['id']; ?>">Login ID</label><input id="admin-username-<?= (int)$admin['id']; ?>" name="admin_username" class="form-control" minlength="3" maxlength="50" pattern="[A-Za-z0-9._-]+" value="<?= school_settings_e($admin['username']); ?>" required></div>
+                            <div class="form-group col-md-4"><label for="admin-password-<?= (int)$admin['id']; ?>">New password</label><input id="admin-password-<?= (int)$admin['id']; ?>" name="admin_password" type="password" class="form-control" minlength="10" maxlength="200" autocomplete="new-password" placeholder="Leave blank to keep current password"><small class="form-text text-muted">At least 10 characters when changing.</small></div>
+                        </div>
+                        <button class="btn btn-success" type="submit"><i class="fas fa-save mr-1"></i>Save / reset login</button>
+                        <span class="badge badge-<?= (int)$admin['status'] === 1 ? 'success' : 'secondary'; ?> ml-2"><?= (int)$admin['status'] === 1 ? 'Active' : 'Disabled'; ?></span>
+                    </form>
+                <?php endforeach; ?>
+            </div>
         </div>
     </div></section>
 </div>

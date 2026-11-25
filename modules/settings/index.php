@@ -534,7 +534,7 @@ if ($registry_ready) {
                                 <td><span class="badge badge-<?= $school['status'] === 'Active' ? 'success' : ($school['status'] === 'Inactive' ? 'secondary' : 'warning'); ?>"><?= school_portal_e($school['status']); ?></span></td>
                                 <td>
                                     <?php if (in_array($school['status'], array('Active', 'Inactive'), true)): ?>
-                                        <a class="btn btn-sm btn-outline-primary" href="school.php?id=<?= (int)$school['id']; ?>">Manage settings</a>
+                                        <a class="btn btn-sm btn-outline-primary" href="school.php?id=<?= (int)$school['id']; ?>">Edit particulars &amp; logins</a>
                                     <?php else: ?>—<?php endif; ?>
                                 </td>
                                 <td>
