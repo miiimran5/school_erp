@@ -12,7 +12,7 @@
         </li>
 
         <li class="nav-item d-none d-sm-inline-block">
-            <a href="<?= BASE_URL; ?>/modules/dashboard/index.php" class="nav-link">Dashboard</a>
+            <a href="<?= BASE_URL; ?><?= access_is_super_admin() && (string)($_SESSION['erp_school_code'] ?? '') === ERP_SUPER_ADMIN_CODE ? '/modules/settings/index.php' : '/modules/dashboard/index.php'; ?>" class="nav-link">Dashboard</a>
         </li>
 
     </ul>
@@ -25,7 +25,11 @@
             ? '/modules/portal/student.php'
             : (access_is_parent()
                 ? '/modules/portal/parent.php'
-                : (access_is_teacher() ? '/modules/portal/teacher.php' : '/modules/dashboard/index.php'));
+                : (access_is_teacher()
+                    ? '/modules/portal/teacher.php'
+                    : ((access_is_super_admin() && (string)($_SESSION['erp_school_code'] ?? '') === ERP_SUPER_ADMIN_CODE)
+                        ? '/modules/settings/index.php'
+                        : '/modules/dashboard/index.php')));
         ?>
         <li class="nav-item">
             <a href="<?= BASE_URL . $home_path; ?>" class="nav-link" title="Home" aria-label="Home">
@@ -89,7 +93,8 @@
 
         <?php
         $academic_sessions = array();
-        $session_query = isset($conn) ? $conn->query("SELECT id, session_name FROM academic_sessions WHERE status=1 ORDER BY id DESC") : false;
+        $super_admin_portal = access_is_super_admin() && (string)($_SESSION['erp_school_code'] ?? '') === ERP_SUPER_ADMIN_CODE;
+        $session_query = isset($conn) && !$super_admin_portal ? $conn->query("SELECT id, session_name FROM academic_sessions WHERE status=1 ORDER BY id DESC") : false;
         if ($session_query) {
             while ($session_row = $session_query->fetch_assoc()) {
                 $academic_sessions[] = $session_row;
