@@ -6,6 +6,7 @@ if (!isset($conn) || !($conn instanceof mysqli)) {
 if (!isset($GLOBALS['school_settings'])) {
     $GLOBALS['school_settings'] = array(
         'app_name' => APP_NAME,
+        'app_tagline' => '',
         'app_logo' => 'educare-erp-logo.png',
         'login_background' => 'educare-erp-login-background.png',
         'school_name' => 'School',

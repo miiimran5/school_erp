@@ -15,6 +15,32 @@ function school_settings_e($value)
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
+function school_settings_save_logo($upload, $school_code)
+{
+    if (!is_array($upload) || (int)($upload['error'] ?? UPLOAD_ERR_NO_FILE) === UPLOAD_ERR_NO_FILE) {
+        return '';
+    }
+    if ((int)$upload['error'] !== UPLOAD_ERR_OK || !is_uploaded_file($upload['tmp_name']) || (int)$upload['size'] > 2097152) {
+        throw new RuntimeException('School logo must be a valid JPG, PNG, or WEBP image no larger than 2 MB.');
+    }
+    $mime = (new finfo(FILEINFO_MIME_TYPE))->file($upload['tmp_name']);
+    $image = getimagesize($upload['tmp_name']);
+    $extensions = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
+    if ($image === false || !isset($extensions[$mime])) {
+        throw new RuntimeException('Choose a JPG, PNG, or WEBP school logo.');
+    }
+    $directory = __DIR__ . '/../../uploads/school';
+    if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+        throw new RuntimeException('Unable to create the school logo folder.');
+    }
+    $prefix = preg_replace('/[^A-Za-z0-9_-]/', '', (string)$school_code);
+    $filename = $prefix . '-school-logo-' . bin2hex(random_bytes(8)) . '.' . $extensions[$mime];
+    if (!move_uploaded_file($upload['tmp_name'], $directory . DIRECTORY_SEPARATOR . $filename)) {
+        throw new RuntimeException('Unable to save the school logo.');
+    }
+    return $filename;
+}
+
 $school_id = (int)($_POST['school_id'] ?? $_GET['id'] ?? 0);
 $school_stmt = $master_conn->prepare("SELECT id, school_code, school_name, database_name, status, is_primary FROM school_portal_schools WHERE id=? AND status IN ('Active','Inactive') LIMIT 1");
 if (!$school_stmt) {
@@ -46,7 +72,7 @@ if (empty($_SESSION['school_identity_csrf'])) {
 }
 $message = '';
 $error = '';
-$keys = array('app_name', 'school_name', 'school_tagline', 'school_address', 'school_phone', 'school_email', 'school_timezone', 'academic_session');
+$keys = array('school_name', 'school_address', 'school_phone', 'school_email', 'academic_session');
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $token = (string)($_POST['csrf_token'] ?? '');
@@ -120,8 +146,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
     } elseif ($action !== 'save_school_settings') {
         $error = 'Choose a valid school settings action.';
-    } elseif ($values['app_name'] === '' || strlen($values['app_name']) > 100 || $values['school_name'] === '' || strlen($values['school_name']) > 150 || strlen($values['school_tagline']) > 150 || strlen($values['school_phone']) > 50 || strlen($values['academic_session']) > 100) {
-        $error = 'Enter a valid ERP name, school name, tagline, phone number, and academic session.';
+    } elseif ($values['school_name'] === '' || strlen($values['school_name']) > 150 || strlen($values['school_phone']) > 50 || strlen($values['academic_session']) > 100) {
+        $error = 'Enter a school name and ensure the phone number and academic session are within the allowed length.';
     } elseif ($values['school_email'] !== '' && (!filter_var($values['school_email'], FILTER_VALIDATE_EMAIL) || strlen($values['school_email']) > 150)) {
         $error = 'Please enter a valid school email address.';
     } elseif (strlen($values['school_address']) > 4000) {
@@ -147,17 +173,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (!$tenant->commit()) {
                 throw new RuntimeException('Unable to save school settings transaction.');
             }
-            foreach ($values as $key => $value) {
-                $GLOBALS['school_settings'][$key] = $value;
-            }
-            foreach (array('app_logo' => 'ERP logo', 'login_background' => 'Home page background') as $field => $label) {
-                try {
-                    school_save_brand_asset($tenant, $_FILES[$field] ?? null, $field, $field === 'app_logo' ? 'educare-logo' : 'login-background');
-                } catch (Throwable $upload_exception) {
-                    error_log('Tenant branding upload failed: ' . $upload_exception->getMessage());
-                    $error = $label . ' could not be saved: ' . $upload_exception->getMessage();
-                    break;
+            try {
+                $school_logo = school_settings_save_logo($_FILES['school_logo'] ?? null, $school['school_code']);
+                if ($school_logo !== '') {
+                    $logo_save = $tenant->prepare('INSERT INTO school_settings (setting_key,setting_value) VALUES ("school_logo",?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)');
+                    if (!$logo_save) {
+                        throw new RuntimeException('Unable to prepare the school logo setting.');
+                    }
+                    $logo_save->bind_param('s', $school_logo);
+                    if (!$logo_save->execute()) {
+                        $logo_save->close();
+                        throw new RuntimeException('Unable to save the school logo setting.');
+                    }
+                    $logo_save->close();
                 }
+            } catch (Throwable $upload_exception) {
+                error_log('School logo upload failed: ' . $upload_exception->getMessage());
+                $error = $upload_exception->getMessage();
+                $message = '';
             }
             $school['school_name'] = $values['school_name'];
             $registry_update = $master_conn->prepare('UPDATE school_portal_schools SET school_name=? WHERE id=? AND is_primary=0');
@@ -181,16 +214,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 $settings = array(
-    'app_name' => APP_NAME,
     'school_name' => $school['school_name'],
-    'school_tagline' => 'School ERP',
     'school_address' => '',
     'school_phone' => '',
     'school_email' => '',
-    'school_timezone' => 'Asia/Kolkata',
     'academic_session' => '',
-    'app_logo' => 'educare-erp-logo.png',
-    'login_background' => 'educare-erp-login-background.png'
+    'school_logo' => ''
 );
 $result = $tenant->query('SELECT setting_key, setting_value FROM school_settings');
 if ($result) {
@@ -231,13 +260,11 @@ $tenant->close();
                 <input type="hidden" name="csrf_token" value="<?= school_settings_e($_SESSION['school_identity_csrf']); ?>">
                 <input type="hidden" name="action" value="save_school_settings">
                 <div class="card-body"><div class="row">
-                    <?php foreach (array('app_name'=>'ERP name','school_name'=>'School name','school_tagline'=>'Tagline','school_phone'=>'Phone','school_email'=>'Email','academic_session'=>'Academic session') as $key=>$label): ?>
-                        <div class="form-group col-md-4"><label for="<?= school_settings_e($key); ?>"><?= school_settings_e($label); ?></label><input id="<?= school_settings_e($key); ?>" name="<?= school_settings_e($key); ?>" class="form-control" value="<?= school_settings_e($settings[$key]); ?>" <?= in_array($key, array('app_name', 'school_name'), true) ? 'required' : ''; ?>></div>
+                    <div class="form-group col-md-4"><label for="school_logo">School logo</label><input id="school_logo" type="file" name="school_logo" class="form-control-file" accept=".jpg,.jpeg,.png,.webp"><small class="form-text text-muted">Optional; JPG, PNG, or WEBP up to 2 MB.</small><?php if ($settings['school_logo'] !== ''): ?><img class="d-block mt-2" src="<?= BASE_URL; ?>/uploads/school/<?= rawurlencode(basename($settings['school_logo'])); ?>" alt="Current school logo" style="max-width:180px;max-height:90px;object-fit:contain"><?php endif; ?></div>
+                    <?php foreach (array('school_name'=>'School name','school_phone'=>'Phone','school_email'=>'Email','academic_session'=>'Academic session') as $key=>$label): ?>
+                        <div class="form-group col-md-4"><label for="<?= school_settings_e($key); ?>"><?= school_settings_e($label); ?></label><input id="<?= school_settings_e($key); ?>" name="<?= school_settings_e($key); ?>" class="form-control" value="<?= school_settings_e($settings[$key]); ?>" <?= $key === 'school_name' ? 'required' : ''; ?>></div>
                     <?php endforeach; ?>
-                    <div class="form-group col-md-4"><label for="school_timezone">Timezone</label><select id="school_timezone" name="school_timezone" class="form-control"><?php foreach (array('Asia/Kolkata','Asia/Dubai','Asia/Dhaka','Asia/Karachi','UTC') as $zone): ?><option value="<?= school_settings_e($zone); ?>" <?= $settings['school_timezone']===$zone?'selected':''; ?>><?= school_settings_e($zone); ?></option><?php endforeach; ?></select></div>
                     <div class="form-group col-md-8"><label for="school_address">Address</label><textarea id="school_address" name="school_address" class="form-control" rows="3" maxlength="4000"><?= school_settings_e($settings['school_address']); ?></textarea></div>
-                    <div class="form-group col-md-4"><label for="app_logo">ERP Logo</label><input id="app_logo" type="file" name="app_logo" class="form-control-file" accept=".jpg,.jpeg,.png,.webp"><small class="form-text text-muted">Optional; JPG, PNG, or WEBP up to 5 MB.</small><img class="d-block mt-2" src="<?= BASE_URL; ?>/uploads/branding/<?= rawurlencode(basename($settings['app_logo'])); ?>" alt="Current ERP logo" style="max-width:180px;max-height:90px;object-fit:contain"></div>
-                    <div class="form-group col-md-8"><label for="login_background">Home page background</label><input id="login_background" type="file" name="login_background" class="form-control-file" accept=".jpg,.jpeg,.png,.webp"><small class="form-text text-muted">Optional; JPG, PNG, or WEBP up to 5 MB.</small><img class="d-block mt-2" src="<?= BASE_URL; ?>/uploads/branding/<?= rawurlencode(basename($settings['login_background'])); ?>" alt="Current home page background" style="max-width:260px;max-height:100px;object-fit:cover"></div>
                 </div></div>
                 <div class="card-footer"><button type="submit" class="btn btn-success"><i class="fas fa-save mr-1"></i>Save school settings</button></div>
             </form>

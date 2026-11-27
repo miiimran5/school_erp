@@ -19,6 +19,9 @@ $conn->set_charset('utf8mb4');
 if (empty($_SESSION['school_portal_csrf'])) {
     $_SESSION['school_portal_csrf'] = bin2hex(random_bytes(32));
 }
+if (empty($_SESSION['super_admin_access_csrf'])) {
+    $_SESSION['super_admin_access_csrf'] = bin2hex(random_bytes(32));
+}
 
 function school_portal_e($value)
 {
@@ -403,17 +406,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
         } elseif ($action === 'save_settings') {
-            $keys = array('app_name', 'school_name', 'school_tagline', 'school_address', 'school_phone', 'school_email', 'school_timezone', 'academic_session');
+            $keys = array('app_name', 'app_tagline');
             $posted = array();
             foreach ($keys as $key) {
                 $posted[$key] = trim((string)($_POST[$key] ?? ''));
             }
-            if ($posted['app_name'] === '' || strlen($posted['app_name']) > 100 || $posted['school_name'] === '') {
-                $error = 'ERP name and school name are required. The ERP name must be 100 characters or fewer.';
-            } elseif ($posted['school_email'] !== '' && !filter_var($posted['school_email'], FILTER_VALIDATE_EMAIL)) {
-                $error = 'Please enter a valid school email address.';
-            } elseif (!in_array($posted['school_timezone'], timezone_identifiers_list(), true)) {
-                $error = 'Please select a valid timezone.';
+            if ($posted['app_name'] === '' || strlen($posted['app_name']) > 100 || strlen($posted['app_tagline']) > 150) {
+                $error = 'Enter an ERP name (up to 100 characters) and a tagline (up to 150 characters).';
             } else {
                 $conn->begin_transaction();
                 try {
@@ -440,36 +439,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     error_log('Super Admin portal settings update failed: ' . $exception->getMessage());
                     $error = 'School settings could not be saved. Check the server error log.';
                 }
-                if (isset($_FILES['school_logo']) && $_FILES['school_logo']['error'] !== UPLOAD_ERR_NO_FILE) {
-                    $allowed = array('image/jpeg' => 'jpg', 'image/png' => 'png', 'image/webp' => 'webp');
-                    $mime = is_uploaded_file($_FILES['school_logo']['tmp_name']) && function_exists('mime_content_type') ? mime_content_type($_FILES['school_logo']['tmp_name']) : '';
-                    if ($_FILES['school_logo']['error'] !== UPLOAD_ERR_OK || !isset($allowed[$mime]) || $_FILES['school_logo']['size'] > 2097152) {
-                        $error = 'Logo must be JPG, PNG, or WEBP and no larger than 2 MB.';
-                    } else {
-                        $filename = 'school_logo.' . $allowed[$mime];
-                        $directory = __DIR__ . '/../../uploads/school';
-                        if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
-                            $error = 'Unable to create the school logo folder.';
-                        } elseif (move_uploaded_file($_FILES['school_logo']['tmp_name'], $directory . '/' . $filename)) {
-                            $stmt = $conn->prepare('INSERT INTO school_settings (setting_key, setting_value) VALUES ("school_logo", ?) ON DUPLICATE KEY UPDATE setting_value=VALUES(setting_value)');
-                            if ($stmt) {
-                                $stmt->bind_param('s', $filename);
-                                $error = $stmt->execute() ? '' : 'Unable to save the school logo setting.';
-                                $stmt->close();
-                                if ($error === '') {
-                                    $GLOBALS['school_settings']['school_logo'] = $filename;
-                                }
-                            } else {
-                                $error = 'Unable to prepare school logo settings.';
-                            }
-                        } else {
-                            $error = 'Unable to save the school logo file.';
-                        }
-                    }
-                    if ($error === '') {
-                        $message = 'Super Admin portal settings saved.';
-                    }
-                }
+
             }
             if ($error === '') {
                 foreach (array('app_logo' => 'ERP logo', 'login_background' => 'Home page background') as $field => $label) {
@@ -518,7 +488,7 @@ if ($registry_ready) {
         <?php if (!$registry_ready): ?>
             <div class="alert alert-warning">Import <code>database/migrations/023_super_admin_control_plane.sql</code> to initialize the separate Super Admin database.</div>
         <?php else: ?>
-            <div class="alert alert-info">Each school is listed separately and uses its own database. Stop Services blocks school logins; Activate Services restores access. New schools do not receive student, employee, login, attendance, payment, or marks data. Academic setup can be copied from the configured template database. Deleting a school permanently drops its database after you enter its exact login code; this cannot be undone. The configured MySQL account must be allowed to create and drop databases.</div>
+            <div class="alert alert-info">Click an active school name to open that school's portal with administrator access—no school login or password is needed. Use <strong>Return to Super Admin</strong> in the top bar to switch back. Each school is listed separately and uses its own database. Stop Services blocks school logins; Activate Services restores access. New schools do not receive student, employee, login, attendance, payment, or marks data. Academic setup can be copied from the configured template database. Deleting a school permanently drops its database after you enter its exact login code; this cannot be undone. The configured MySQL account must be allowed to create and drop databases.</div>
             <a class="btn btn-outline-primary mb-3" href="<?= BASE_URL; ?>/modules/settings/feature_access.php"><i class="fas fa-user-lock mr-1"></i>Manage Teacher and Student Feature Access</a>
             <div class="card">
                 <div class="card-header bg-primary text-white"><h3 class="card-title">Schools and access</h3></div>
@@ -528,7 +498,17 @@ if ($registry_ready) {
                         <tbody>
                         <?php foreach ($schools as $school): ?>
                             <tr>
-                                <td><?= school_portal_e($school['school_name']); ?></td>
+                                <td>
+                                    <?php if ($school['status'] === 'Active'): ?>
+                                        <form method="post" action="<?= BASE_URL; ?>/modules/settings/access_school.php" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="<?= school_portal_e($_SESSION['super_admin_access_csrf']); ?>">
+                                            <input type="hidden" name="school_id" value="<?= (int)$school['id']; ?>">
+                                            <button type="submit" class="btn btn-link p-0 align-baseline"><?= school_portal_e($school['school_name']); ?></button>
+                                        </form>
+                                    <?php else: ?>
+                                        <?= school_portal_e($school['school_name']); ?>
+                                    <?php endif; ?>
+                                </td>
                                 <td><code><?= school_portal_e($school['school_code']); ?></code></td>
                                 <td><?= school_portal_e($school['database_name']); ?></td>
                                 <td><span class="badge badge-<?= $school['status'] === 'Active' ? 'success' : ($school['status'] === 'Inactive' ? 'secondary' : 'warning'); ?>"><?= school_portal_e($school['status']); ?></span></td>
@@ -584,21 +564,18 @@ if ($registry_ready) {
         <?php endif; ?>
 
         <div class="card">
-            <div class="card-header bg-primary text-white"><h3 class="card-title">Super Admin application settings</h3></div>
+            <div class="card-header bg-primary text-white"><h3 class="card-title">ERP Profile</h3></div>
             <form method="post" enctype="multipart/form-data">
                 <input type="hidden" name="csrf_token" value="<?= school_portal_e($_SESSION['school_portal_csrf']); ?>">
                 <input type="hidden" name="action" value="save_settings">
                 <div class="card-body"><div class="row">
-                    <?php foreach (array('app_name'=>'ERP Name','school_name'=>'Super Admin portal name','school_tagline'=>'Portal tagline','school_phone'=>'Contact phone','school_email'=>'Contact email','academic_session'=>'Academic Session') as $key=>$label): ?>
-                        <div class="form-group col-md-4"><label for="<?= school_portal_e($key); ?>"><?= school_portal_e($label); ?></label><input id="<?= school_portal_e($key); ?>" name="<?= school_portal_e($key); ?>" class="form-control" value="<?= school_portal_e($settings[$key]); ?>" <?= in_array($key, array('app_name', 'school_name'), true) ? 'required' : ''; ?>></div>
+                    <?php foreach (array('app_name'=>'ERP Name','app_tagline'=>'Tagline') as $key=>$label): ?>
+                        <div class="form-group col-md-4"><label for="<?= school_portal_e($key); ?>"><?= school_portal_e($label); ?></label><input id="<?= school_portal_e($key); ?>" name="<?= school_portal_e($key); ?>" class="form-control" value="<?= school_portal_e($settings[$key]); ?>" <?= $key === 'app_name' ? 'required' : ''; ?>></div>
                     <?php endforeach; ?>
-                    <div class="form-group col-md-4"><label for="school_timezone">Timezone</label><select id="school_timezone" name="school_timezone" class="form-control"><?php foreach (array('Asia/Kolkata','Asia/Dubai','Asia/Dhaka','Asia/Karachi','UTC') as $zone): ?><option value="<?= school_portal_e($zone); ?>" <?= $settings['school_timezone']===$zone?'selected':''; ?>><?= school_portal_e($zone); ?></option><?php endforeach; ?></select></div>
-                    <div class="form-group col-md-8"><label for="school_address">Address</label><textarea id="school_address" name="school_address" class="form-control" rows="2"><?= school_portal_e($settings['school_address']); ?></textarea></div>
-                    <div class="form-group col-md-4"><label for="school_logo">School logo</label><input id="school_logo" type="file" name="school_logo" class="form-control-file" accept=".jpg,.jpeg,.png,.webp"><small class="text-muted">JPG, PNG or WEBP, maximum 2 MB.</small><?php if ($settings['school_logo']): ?><div class="mt-2"><img src="<?= BASE_URL; ?>/uploads/school/<?= school_portal_e($settings['school_logo']); ?>" alt="School logo" style="max-height:60px"></div><?php endif; ?></div>
                     <div class="form-group col-md-4"><label for="app_logo">ERP Logo</label><input id="app_logo" type="file" name="app_logo" class="form-control-file" accept=".jpg,.jpeg,.png,.webp"><small class="form-text text-muted">Optional; JPG, PNG, or WEBP up to 5 MB. Leave empty to keep the current logo.</small><img class="d-block mt-2" src="<?= BASE_URL; ?>/uploads/branding/<?= rawurlencode(basename($settings['app_logo'])); ?>" alt="Current ERP logo" style="max-width:180px;max-height:90px;object-fit:contain"></div>
                     <div class="form-group col-md-8"><label for="login_background">Home Page Background</label><input id="login_background" type="file" name="login_background" class="form-control-file" accept=".jpg,.jpeg,.png,.webp"><small class="form-text text-muted">Optional; JPG, PNG, or WEBP up to 5 MB. Leave empty to keep the current background.</small><img class="d-block mt-2" src="<?= BASE_URL; ?>/uploads/branding/<?= rawurlencode(basename($settings['login_background'])); ?>" alt="Current home page background" style="max-width:260px;max-height:100px;object-fit:cover"></div>
                 </div></div>
-                <div class="card-footer"><button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i>Save application settings</button></div>
+                <div class="card-footer"><button type="submit" class="btn btn-primary"><i class="fas fa-save mr-1"></i>Save ERP Profile</button></div>
             </form>
         </div>
     </div></section>

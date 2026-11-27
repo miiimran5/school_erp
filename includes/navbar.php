@@ -31,6 +31,15 @@
                         ? '/modules/settings/index.php'
                         : '/modules/dashboard/index.php')));
         ?>
+        <?php if (!empty($_SESSION['super_admin_school_access']) && !empty($_SESSION['super_admin_access_csrf'])): ?>
+        <li class="nav-item d-flex align-items-center mr-2">
+            <span class="badge badge-warning mr-2">Super Admin access: <?= htmlspecialchars((string)$_SESSION['super_admin_school_access']['school_name'], ENT_QUOTES, 'UTF-8'); ?></span>
+            <form method="post" action="<?= BASE_URL; ?>/modules/settings/return_super_admin.php" class="d-inline">
+                <input type="hidden" name="csrf_token" value="<?= htmlspecialchars((string)$_SESSION['super_admin_access_csrf'], ENT_QUOTES, 'UTF-8'); ?>">
+                <button type="submit" class="btn btn-sm btn-outline-primary">Return to Super Admin</button>
+            </form>
+        </li>
+        <?php endif; ?>
         <li class="nav-item">
             <a href="<?= BASE_URL . $home_path; ?>" class="nav-link" title="Home" aria-label="Home">
                 <i class="fas fa-home"></i><span class="d-none d-sm-inline ml-1">Home</span>

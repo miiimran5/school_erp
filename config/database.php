@@ -79,7 +79,10 @@ try {
         $school = $lookup->get_result()->fetch_assoc();
         $lookup->close();
 
-        if (!$school || $school['status'] !== 'Active') {
+        $super_admin_access = $_SESSION['super_admin_school_access'] ?? null;
+        $valid_super_admin_access = is_array($super_admin_access)
+            && (string)($super_admin_access['school_code'] ?? '') === $selected_school_code;
+        if (!$school || ($school['status'] !== 'Active' && !$valid_super_admin_access)) {
             http_response_code(403);
             exit('This school is unavailable or inactive. Contact the Super Admin.');
         }

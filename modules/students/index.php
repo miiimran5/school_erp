@@ -124,6 +124,7 @@ function student_filter_url($overrides)
 </style>
 
 <div class="student-toolbar mb-3">
+    <a href="<?= BASE_URL; ?>/modules/students/photos.php" class="btn btn-outline-primary"><i class="fas fa-camera"></i> Upload Student Photos</a>
     <a href="<?= office_e($struck_url); ?>" class="btn btn-danger"><i class="fas fa-user-slash"></i> Struck Off Students</a>
     <?php if (access_is_admin()): ?>
     <a href="<?= BASE_URL; ?>/modules/students/add.php" class="btn btn-success"><i class="fas fa-plus"></i> Add</a>

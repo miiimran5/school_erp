@@ -61,6 +61,95 @@ function office_ensure_schema($conn)
     $ready = true;
 }
 
+function office_process_student_photo($upload)
+{
+    if (!extension_loaded('gd')) {
+        throw new RuntimeException('Photo resizing is unavailable. Enable the GD extension in the XAMPP PHP configuration, then restart Apache.');
+    }
+    if (!isset($upload['error'], $upload['tmp_name'], $upload['size']) || $upload['error'] !== UPLOAD_ERR_OK || (int)$upload['size'] <= 0 || (int)$upload['size'] > 5242880 || !is_uploaded_file($upload['tmp_name'])) {
+        throw new RuntimeException('Choose a valid photo no larger than 5 MB.');
+    }
+    $image_info = @getimagesize($upload['tmp_name']);
+    if ($image_info === false || !in_array($image_info['mime'], array('image/jpeg', 'image/png', 'image/webp'), true)) {
+        throw new RuntimeException('Choose a valid JPG, PNG, or WEBP photo.');
+    }
+    $width = (int)$image_info[0];
+    $height = (int)$image_info[1];
+    if ($width < 1 || $height < 1 || $width > 8000 || $height > 8000 || $width * $height > 15000000) {
+        throw new RuntimeException('The photo dimensions are too large. Please choose a smaller image.');
+    }
+    $loaders = array('image/jpeg' => 'imagecreatefromjpeg', 'image/png' => 'imagecreatefrompng', 'image/webp' => 'imagecreatefromwebp');
+    $loader = $loaders[$image_info['mime']];
+    if (!function_exists($loader)) {
+        throw new RuntimeException('This PHP installation cannot process this photo format. Enable GD with JPEG, PNG, and WEBP support.');
+    }
+    $source = @$loader($upload['tmp_name']);
+    if (!$source) {
+        throw new RuntimeException('Unable to read the selected photo.');
+    }
+    $directory = __DIR__ . '/../uploads/students';
+    if (!is_dir($directory) && !mkdir($directory, 0755, true) && !is_dir($directory)) {
+        imagedestroy($source);
+        throw new RuntimeException('Unable to create the student photo folder.');
+    }
+    $long_edge = max($width, $height);
+    $scale = $long_edge > 1600 ? 1600 / $long_edge : 1;
+    $target_width = max(1, (int)round($width * $scale));
+    $target_height = max(1, (int)round($height * $scale));
+    $target = imagecreatetruecolor($target_width, $target_height);
+    $white = imagecolorallocate($target, 255, 255, 255);
+    imagefill($target, 0, 0, $white);
+    imagecopyresampled($target, $source, 0, 0, 0, 0, $target_width, $target_height, $width, $height);
+    imagedestroy($source);
+
+    $filename = 'student_' . bin2hex(random_bytes(16)) . '.jpg';
+    $path = $directory . '/' . $filename;
+    $saved = false;
+    for ($attempt = 0; $attempt < 8; $attempt++) {
+        for ($quality = 85; $quality >= 35; $quality -= 10) {
+            if (imagejpeg($target, $path, $quality)) {
+                clearstatcache(true, $path);
+            }
+            if (is_file($path) && filesize($path) <= 307200) {
+                $saved = true;
+                break 2;
+            }
+        }
+        if (max($target_width, $target_height) <= 160) {
+            break;
+        }
+        $target_width = max(1, (int)floor($target_width * 0.8));
+        $target_height = max(1, (int)floor($target_height * 0.8));
+        $smaller = imagecreatetruecolor($target_width, $target_height);
+        $white = imagecolorallocate($smaller, 255, 255, 255);
+        imagefill($smaller, 0, 0, $white);
+        imagecopyresampled($smaller, $target, 0, 0, 0, 0, $target_width, $target_height, imagesx($target), imagesy($target));
+        imagedestroy($target);
+        $target = $smaller;
+    }
+    imagedestroy($target);
+    if (!$saved) {
+        if (is_file($path)) {
+            unlink($path);
+        }
+        throw new RuntimeException('Unable to compress this photo below 300 KB. Please choose another image.');
+    }
+    return $filename;
+}
+
+function office_delete_student_photo($filename)
+{
+    $filename = basename((string)$filename);
+    if ($filename === '') {
+        return;
+    }
+    $directory = realpath(__DIR__ . '/../uploads/students');
+    $path = $directory !== false ? $directory . DIRECTORY_SEPARATOR . $filename : '';
+    if ($path !== '' && is_file($path) && realpath($path) !== false && dirname(realpath($path)) === $directory) {
+        unlink($path);
+    }
+}
+
 function office_gender_words($gender)
 {
     $is_female = strcasecmp((string)$gender, 'Female') === 0;
